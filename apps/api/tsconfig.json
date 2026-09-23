@@ -1,0 +1,15 @@
+{
+  "extends": "@ecom/config/tsconfig.base.json",
+  "compilerOptions": {
+    "module": "Node16",
+    "moduleResolution": "Node16",
+    "outDir": "dist",
+    "rootDir": "src",
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "strictPropertyInitialization": false,
+    "declaration": false,
+    "types": ["node", "jest", "multer"]
+  },
+  "include": ["src"]
+}

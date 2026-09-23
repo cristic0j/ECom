@@ -1,0 +1,30 @@
+import { z } from "zod";
+
+const schema = z
+  .object({
+    NODE_ENV: z.string().default("development"),
+    DATABASE_URL: z.string().min(1),
+    API_PORT: z.coerce.number().default(4000),
+    API_PUBLIC_URL: z.string().url().default("http://localhost:4000"),
+    WEB_ORIGIN: z.string().default("http://localhost:3000"),
+    JWT_SECRET: z.string().min(8),
+    STORAGE_DRIVER: z.enum(["local", "s3"]).default("local"),
+    S3_ENDPOINT: z.string().optional(),
+    S3_REGION: z.string().default("us-east-1"),
+    S3_BUCKET: z.string().optional(),
+    S3_ACCESS_KEY: z.string().optional(),
+    S3_SECRET_KEY: z.string().optional(),
+    S3_PUBLIC_URL: z.string().optional(),
+  })
+  .refine(
+    (e) => e.STORAGE_DRIVER !== "s3" || (e.S3_BUCKET && e.S3_ACCESS_KEY && e.S3_SECRET_KEY && e.S3_PUBLIC_URL),
+    "STORAGE_DRIVER=s3 requires S3_BUCKET, S3_ACCESS_KEY, S3_SECRET_KEY and S3_PUBLIC_URL",
+  );
+
+const parsed = schema.safeParse(process.env);
+if (!parsed.success) {
+  console.error("Invalid environment configuration:", parsed.error.flatten());
+  throw new Error("Invalid environment configuration");
+}
+
+export const env = parsed.data;

@@ -72,8 +72,3 @@ export interface ApiError {
   message: string;
   details?: unknown;
 }
-
-export interface UploadTicket {
-  uploadUrl: string;
-  publicUrl: string;
-}

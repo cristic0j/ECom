@@ -80,11 +80,21 @@ async function main() {
         description: p.description,
         status: ProductStatus.ACTIVE,
         attributes: p.attributes,
+        priceMinMinor: Math.min(...p.variants.map((v) => v.priceMinor)),
         categories: { create: p.categoryIds.map((categoryId) => ({ categoryId })) },
         variants: { create: p.variants },
         images: { create: p.images.map((url, position) => ({ url, alt: p.title, position })) },
       },
     });
+  }
+
+  // Keep the denormalized min price in sync (also backfills rows created before the column existed)
+  for (const p of await prisma.product.findMany({ include: { variants: true } })) {
+    if (!p.variants.length) continue;
+    const priceMinMinor = Math.min(...p.variants.map((v) => v.priceMinor));
+    if (priceMinMinor !== p.priceMinMinor) {
+      await prisma.product.update({ where: { id: p.id }, data: { priceMinMinor } });
+    }
   }
 
   console.log(`Seeded. Admin login: ${email} / ${password}`);

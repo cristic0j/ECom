@@ -67,10 +67,31 @@ export const adminProductListQuerySchema = productListQuerySchema.extend({
 });
 export type AdminProductListQuery = z.infer<typeof adminProductListQuerySchema>;
 
-export const settingsInputSchema = z.record(z.unknown());
+const hslTriplet = z.string().regex(/^\d{1,3}(\.\d+)? \d{1,3}(\.\d+)?% \d{1,3}(\.\d+)?%$/, 'Use "H S% L%" format');
 
-export const uploadRequestSchema = z.object({
-  filename: z.string().min(1).max(200),
-  contentType: z.string().regex(/^image\/(png|jpe?g|webp|gif|avif)$/, "Only images are allowed"),
-});
-export type UploadRequest = z.infer<typeof uploadRequestSchema>;
+/**
+ * Runtime-editable store settings (admin → Settings). These override store.config.ts defaults.
+ * Everything here is PUBLIC (served to the storefront) — never put secrets in settings.
+ */
+export const storeSettingsSchema = z
+  .object({
+    name: z.string().min(1).max(80),
+    tagline: z.string().max(200),
+    logoUrl: z.string().max(500),
+    currency: z.string().length(3).toUpperCase(),
+    locale: z.string().min(2).max(20),
+    theme: z
+      .object({
+        primary: hslTriplet,
+        primaryForeground: hslTriplet,
+        accent: hslTriplet,
+        radius: z.string().regex(/^\d+(\.\d+)?(rem|px)$/),
+      })
+      .partial(),
+  })
+  .partial()
+  .strict();
+export type StoreSettings = z.infer<typeof storeSettingsSchema>;
+
+export const ALLOWED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif", "image/avif"] as const;
+export const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
