@@ -19,6 +19,31 @@ Full original plan: `~/.claude/plans/i-am-planning-to-recursive-shell.md`
 
 ---
 
+## ▶ Where we left off (session 2026-09-25)
+
+**Done this session** (all committed on `main`):
+- `9bd32ab`: fixed the Playwright run (orphaned dev servers) and committed the web app
+- `d612a26`: finished Phase 1: README, windowed pagination, editor View-link fix, `SEED_DEMO=false`, production `JWT_SECRET` guard
+- `02fb096`: **Phase 2**: customer accounts, cart, checkout, orders, admin Orders (details in "Phase 2: what's done")
+- Verified: root `pnpm dev` starts everything. The store owner clicked through the whole flow in the browser and it works.
+
+**Next up: the store owner chose to decide at the start of next session.** The recommendation given was:
+1. **Order emails** (small, recommended first):
+   - an `EmailProvider` interface with Resend or Postmark behind it, plus a console/log provider for local dev
+   - emails: order received (customer + store owner), paid, shipped
+   - this also unlocks customer "forgot password"
+   - make the checkout payment instructions a store setting at the same time
+2. **Phase 3: Stripe payments** (see "Next phases" below); it reuses the email layer for receipts
+3. Phase 4: stock management, and/or **deploying online** (Railway/Render + managed Postgres + R2/S3). No host has been chosen yet.
+
+**Open decisions for the store owner:** which to do next (emails / Stripe / stock / deploy), the email provider, and the hosting provider.
+
+**About the store owner:** new to hosting and backend concepts. Explain in plain terms, give a recommendation, and ask before big choices. Earlier questions answered in the session: how the 3 pieces fit together (web → API → database), what changes between local and hosted, and that migrations and the seed must be run (they're not automatic). A later deploy should put them in the host's pre-deploy step.
+
+**State at the end of the session:** `pnpm dev` was left running in the background for manual testing. If ports 3000/4000 are busy next time, stop it: `pkill -f "turbo run dev"`.
+
+---
+
 ## Stack & layout
 
 - **Monorepo:** pnpm 12 workspaces + Turborepo
