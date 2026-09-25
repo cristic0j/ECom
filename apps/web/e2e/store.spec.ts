@@ -100,3 +100,95 @@ test("admin routes redirect to login when signed out", async ({ page }) => {
   await page.goto("/admin/products");
   await expect(page).toHaveURL(/\/admin\/login\?next=%2Fadmin%2Fproducts/);
 });
+
+async function fillAddress(page: Page) {
+  await page.getByLabel("Full name").fill("Ada Buyer");
+  await page.getByLabel("Address", { exact: true }).fill("1 Main St");
+  await page.getByLabel("City").fill("Berlin");
+  await page.getByLabel("Postal code").fill("10115");
+  await page.getByLabel("Country code (e.g. DE)").fill("DE");
+}
+
+test("guest buys a product and the admin marks the order paid", async ({ page }) => {
+  await page.goto("/p/classic-tee");
+  await page.getByRole("button", { name: "L", exact: true }).click();
+  await page.getByRole("button", { name: "White", exact: true }).click();
+  await page.getByRole("button", { name: "Add to cart" }).click();
+  await expect(page.getByRole("button", { name: "Added to cart" })).toBeVisible();
+  await expect(page.getByTestId("cart-link")).toHaveAccessibleName("Cart, 1 item");
+
+  await page.getByRole("link", { name: "View cart and check out" }).click();
+  await expect(page.getByTestId("cart-line")).toHaveCount(1);
+  await expect(page.getByTestId("cart-line")).toContainText("L / White");
+  await page.getByRole("button", { name: "Increase quantity of Classic Tee" }).click();
+  await expect(page.getByTestId("line-quantity")).toHaveText("2");
+  // 2 × 19.99 + 4.99 flat shipping (store.config.ts defaults)
+  await expect(page.getByTestId("order-total")).toContainText("44.97");
+
+  await page.getByRole("link", { name: "Check out" }).click();
+  await page.getByRole("button", { name: "Place order" }).click();
+  await expect(page.getByText("Please check the highlighted fields.")).toBeVisible();
+
+  const email = `guest-${Date.now().toString(36)}@example.com`;
+  await page.getByLabel("Email").fill(email);
+  await fillAddress(page);
+  await page.getByRole("button", { name: "Place order" }).click();
+
+  await expect(page).toHaveURL(/\/order\/\d+\?token=/);
+  const heading = page.getByRole("heading", { name: /Order #\d+/ });
+  await expect(heading).toBeVisible();
+  const number = (await heading.textContent())!.replace(/\D/g, "");
+  await expect(page.getByTestId("order-status")).toHaveText("Awaiting payment");
+  await expect(page.getByTestId("order-total")).toContainText("44.97");
+  await expect(page.getByTestId("cart-link")).toHaveAccessibleName("Cart, 0 items");
+
+  await login(page);
+  await page.goto("/admin/orders");
+  await page.getByLabel("Search orders").fill(email);
+  await page.getByRole("button", { name: "Search" }).click();
+  await page.getByRole("link", { name: `#${number}` }).click();
+  await expect(page.getByRole("heading", { name: `Order #${number}` })).toBeVisible();
+  await page.getByLabel("Note (optional)").fill("Bank transfer received");
+  await page.getByRole("button", { name: "Mark as paid" }).click();
+  await expect(page.getByTestId("admin-order-status")).toHaveText("Paid");
+  await expect(page.getByText("“Bank transfer received”")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Mark as fulfilled" })).toBeVisible();
+});
+
+test("a shopper's guest cart carries over when they create an account", async ({ page }) => {
+  await page.goto("/p/ceramic-mug");
+  await page.getByRole("button", { name: "Add to cart" }).click();
+  await expect(page.getByTestId("cart-link")).toHaveAccessibleName("Cart, 1 item");
+
+  const email = `shopper-${Date.now().toString(36)}@example.com`;
+  await page.goto("/account/register?next=/checkout");
+  await page.getByLabel("Name").fill("Sam Shopper");
+  await page.getByLabel("Email").fill(email);
+  await page.getByLabel("Password").fill("short");
+  await page.getByRole("button", { name: "Create account" }).click();
+  await expect(page.getByText("Use at least 8 characters")).toBeVisible();
+  await page.getByLabel("Password").fill("pass12345");
+  await page.getByRole("button", { name: "Create account" }).click();
+
+  // Lands on checkout with the cart intact and the account's details filled in
+  await expect(page).toHaveURL(/\/checkout$/);
+  await expect(page.getByTestId("cart-link")).toHaveAccessibleName("Cart, 1 item");
+  await expect(page.getByLabel("Email")).toHaveValue(email);
+  await expect(page.getByLabel("Full name")).toHaveValue("Sam Shopper");
+  await page.getByLabel("Address", { exact: true }).fill("2 Side St");
+  await page.getByLabel("City").fill("Hamburg");
+  await page.getByLabel("Postal code").fill("20095");
+  await page.getByLabel("Country code (e.g. DE)").fill("DE");
+  await page.getByRole("button", { name: "Place order" }).click();
+  await expect(page.getByRole("heading", { name: /Order #\d+/ })).toBeVisible();
+
+  await page.getByRole("link", { name: "Your orders" }).click();
+  await expect(page.getByRole("heading", { name: "Your account" })).toBeVisible();
+  await expect(page.getByText(email)).toBeVisible();
+  await expect(page.getByRole("link", { name: /#\d+/ })).toHaveCount(1);
+
+  await page.getByRole("button", { name: "Sign out" }).click();
+  await expect(page).toHaveURL("/");
+  await page.goto("/account");
+  await expect(page).toHaveURL(/\/account\/login\?next=%2Faccount/);
+});

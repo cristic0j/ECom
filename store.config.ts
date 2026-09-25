@@ -16,14 +16,21 @@ export const storeConfig = {
     radius: "0.5rem",
   },
   features: {
+    // Customer accounts, cart, checkout and orders
+    cart: true,
     // Future modules — flip on as they are implemented
-    cart: false,
     payments: false,
     inventory: false,
     reviews: false,
   },
   catalog: {
     pageSize: 24,
+  },
+  // Prices include tax. Amounts in minor units (cents); editable later in admin → Settings.
+  shipping: {
+    flatRateMinor: 499 as number,
+    // Orders at or above this subtotal ship free; null = never free
+    freeOverMinor: 5000 as number | null,
   },
 } as const;
 

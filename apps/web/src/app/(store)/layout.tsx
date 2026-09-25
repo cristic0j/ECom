@@ -2,11 +2,13 @@ import Link from "next/link";
 import { Search } from "lucide-react";
 import { api } from "@/lib/api";
 import { getStore } from "@/lib/store";
+import { ShopProvider } from "@/components/store/shop-provider";
+import { ShopHeaderLinks } from "@/components/store/shop-header";
 
 export default async function StoreLayout({ children }: LayoutProps<"/">) {
   const [store, categories] = await Promise.all([getStore(), api.categories().catch(() => [])]);
 
-  return (
+  const page = (
     <div className="flex min-h-screen flex-col">
       <header className="sticky top-0 z-20 border-b border-border bg-background/90 backdrop-blur">
         <div className="mx-auto flex h-16 max-w-7xl items-center gap-6 px-4">
@@ -35,6 +37,7 @@ export default async function StoreLayout({ children }: LayoutProps<"/">) {
               />
             </div>
           </form>
+          {store.features.cart && <ShopHeaderLinks />}
         </div>
         {categories.length > 0 && (
           <nav aria-label="Categories" className="flex gap-4 overflow-x-auto px-4 pb-3 text-sm md:hidden">
@@ -58,5 +61,12 @@ export default async function StoreLayout({ children }: LayoutProps<"/">) {
         </div>
       </footer>
     </div>
+  );
+
+  if (!store.features.cart) return page;
+  return (
+    <ShopProvider currency={store.currency} locale={store.locale}>
+      {page}
+    </ShopProvider>
   );
 }

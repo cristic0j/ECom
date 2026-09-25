@@ -11,7 +11,7 @@ The work is split into four phases:
 | Phase | Scope | Status |
 |---|---|---|
 | 1 | Product catalog + admin panel | ✅ done (2026-09-25) |
-| 2 | Customer accounts, cart, checkout, orders | ⬜ not started |
+| 2 | Customer accounts, cart, checkout, orders | ✅ done (2026-09-25) |
 | 3 | Payments (Stripe, via a provider interface) | ⬜ not started |
 | 4 | Stock management (per-variant inventory) | ⬜ not started |
 
@@ -32,6 +32,7 @@ apps/api      NestJS API (port 4000, prefix /api)
 apps/web      Next.js storefront + /admin (port 3000)
 packages/db   Prisma schema, migrations, seed
 packages/shared  zod schemas + TS types (API contract)
+packages/store-config  compiles store.config.ts for the API
 packages/config  tsconfig presets
 store.config.ts  per-store defaults (name, currency, theme, feature flags)
 docker-compose.yml  Postgres only (host port 5433)
@@ -129,7 +130,7 @@ pnpm --filter @ecom/web dev     # http://localhost:3000  (admin: /admin)
 
 ## Phase 1: final steps (all done; kept for the record)
 
-**Next up: Phase 2** (see below).
+Phase 2 is built too; see "Phase 2: what's done" below.
 
 1. ~~Debug the Playwright run~~ ✅ done 2026-09-25. All 5 tests pass, cold or warm, in about 8s. Causes:
    - The Playwright `webServer` commands went through `pnpm`, which doesn't forward SIGTERM, so `dotenv` → `next dev` was orphaned after each run and the next run reused a broken leftover server. `playwright.config.ts` now calls the `dotenv`/`next`/`nest` binaries directly, with `gracefulShutdown`.
@@ -151,25 +152,54 @@ pnpm --filter @ecom/web dev     # http://localhost:3000  (admin: /admin)
 
 ---
 
+## Phase 2: what's done
+
+**Decisions (from the store owner):** guest checkout with optional accounts; **prices include tax** (no tax line); **manual payment** until Phase 3: orders start `PENDING` and an admin marks them `PAID` by hand (bank transfer or cash on delivery).
+
+- **Config reaches the API:** `packages/store-config` compiles the root `store.config.ts` so the API can `import { storeConfig } from "@ecom/store-config"`. The web app still reads the file through its `@store-config` alias. After editing `store.config.ts`, rebuild that package (or restart `pnpm dev`) for the API to see the change.
+- **`store.config.ts`:** `features.cart: true`, plus new `shipping: { flatRateMinor: 499, freeOverMinor: 5000 }`. Admin → Settings → Shipping overrides both (`storeSettingsSchema.shipping`).
+- **DB** (migration `orders_customers_carts`): `Customer`, `Cart` / `CartItem`, `Order` / `OrderItem` / `OrderEvent`, enum `OrderStatus`.
+  - Order numbers start at **#1001**.
+  - Order items snapshot title, sku and price.
+  - `Order.accessToken` is the secret behind the guest confirmation link.
+  - `OrderEvent` records the status history (actor = admin email, `customer` or `guest`).
+  - There's **no separate Address table**: the address is snapshotted as JSON on the order. A saved address book can come later.
+- **Shared** (`packages/shared`):
+  - schemas: `customerRegisterSchema`, `cartAddSchema`, `cartUpdateSchema`, `addressSchema`, `checkoutSchema`, `orderStatusUpdateSchema`, `adminOrderListQuerySchema`
+  - `orders.ts`: `computeTotals()` (subtotal + shipping) and `ORDER_TRANSITIONS` / `canTransition()`
+- **API** (`apps/api/src/commerce/`):
+  - `customer-auth.ts`: `ecom_customer` JWT cookie (30 days, `typ: "customer"`), `ecom_cart` guest cookie, `CartFeatureGuard` (404 when `features.cart` is off), `OptionalCustomerGuard` / `CustomerAuthGuard`. Admin tokens now carry `typ: "admin"`, and the admin guard rejects customer tokens.
+  - `cart.service.ts`: prices are always the live variant price. Lines for unpublished products are dropped when the cart is read. At login/registration the guest cart **merges** into the customer's cart (quantities added, capped at 99). A guest token never opens a customer's cart.
+  - `orders.service.ts`: checkout runs in one transaction with `SELECT … FOR UPDATE` on the cart (so a double submit can't create two orders), recomputes everything on the server, snapshots the items, then clears the cart. The admin status update is guarded against concurrent changes.
+  - Routes:
+    - `account/{register,login,logout,me,orders,orders/:number}`
+    - `cart`, `cart/items[/:id]`
+    - `POST checkout`
+    - `GET orders/:number?token=`
+    - `admin/orders` (list, `counts`, `:number`, `PATCH :number/status`)
+- **Web:**
+  - `components/store/shop-provider.tsx` (cart and customer context, mounted only when `features.cart` is on)
+  - header account and cart links, add-to-cart on product pages
+  - pages: `/cart`, `/checkout`, `/order/[number]?token=`, `/account`, `/account/login|register` (`?next=` limited to same-site paths), `/account/orders/[number]`
+  - admin: `/admin/orders` list and `/admin/orders/[number]` detail (allowed status buttons, note, history), dashboard tiles "Awaiting payment" / "Paid, to fulfil", and the Shipping card in Settings
+  - `lib/api-client.ts` is the shared browser fetch client for `lib/admin-api.ts` and `lib/shop-api.ts`
+- **Tests:**
+  - 20 unit (15 new in `commerce/order-rules.spec.ts`)
+  - 21 API e2e (5 new: guest cart, server-side repricing and snapshot, merge at registration and private orders, unpublished lines, admin statuses)
+  - 7 Playwright (2 new: guest checkout → admin marks paid; register keeps cart → account order history)
+  - With `cart: false`, every storefront commerce route and page returns 404 (checked by hand).
+
+**Known gaps / follow-ups:**
+- **No emails.** Customers aren't notified of orders or status changes, and the store owner has to check the admin. The next step is an email provider behind an interface (order confirmation, "paid", "shipped").
+- The payment text at checkout ("we'll contact you with payment details…") is hard-coded; make it a store setting.
+- No password reset for customers (needs email).
+- Abandoned guest carts are never deleted (`Cart.updatedAt` is indexed for a future cleanup job).
+- Playwright runs leave test orders and customers in the dev DB (`guest-*@example.com`, `shopper-*@example.com`).
+- The order-number sequence is set with `RESTART WITH 1001`, so `TRUNCATE … RESTART IDENTITY` (the API e2e tests) resets it to 1. Harmless.
+
+---
+
 ## Next phases (designed for, not built)
-
-The existing design already leaves room for these:
-- Feature flags `cart`, `payments`, `inventory` and `reviews` live in `store.config.ts`.
-- Variant ids are stable.
-- Money is stored as integer minor units.
-
-### Phase 2: customers, cart, checkout, orders
-- Prisma models:
-  - `Customer`: separate from `AdminUser`, with its own auth cookie (e.g. `ecom_customer`)
-  - `Address`
-  - `Cart` and `CartItem`: `variantId` and qty; guest carts keyed by a cookie and merged at login
-  - `Order` and `OrderItem`: **snapshot** title, sku and unit price at purchase time, then status PENDING → PAID → FULFILLED / CANCELLED / REFUNDED
-- API modules: `customers`, `cart`, `checkout` (validate the cart, recompute prices on the server, create a PENDING order) and `admin/orders` (list, detail, status changes).
-- Web:
-  - cart drawer and page, checkout form, account pages (login/register, order history)
-  - admin Orders page
-  - gate everything behind `features.cart`
-- Shipping and tax: start with flat-rate or free-over-X rules stored in settings, behind an interface.
 
 ### Phase 3: payments
 - `PaymentProvider` interface (`createPayment`, `handleWebhook`, `refund`), with `StripeProvider` as the first implementation (Checkout Session or Payment Element).

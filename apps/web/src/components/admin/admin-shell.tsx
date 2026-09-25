@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import { FolderTree, LayoutDashboard, LogOut, Package, Settings, Store } from "lucide-react";
+import { FolderTree, LayoutDashboard, LogOut, Package, Receipt, Settings, Store } from "lucide-react";
 import type { AdminUserDto } from "@ecom/shared";
 import { adminApi, ApiRequestError } from "@/lib/admin-api";
 import { cn } from "@/lib/utils";
@@ -19,6 +19,7 @@ export function useAdmin(): AdminUserDto {
 
 const NAV = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard, exact: true },
+  { href: "/admin/orders", label: "Orders", icon: Receipt },
   { href: "/admin/products", label: "Products", icon: Package },
   { href: "/admin/categories", label: "Categories", icon: FolderTree },
   { href: "/admin/settings", label: "Settings", icon: Settings },

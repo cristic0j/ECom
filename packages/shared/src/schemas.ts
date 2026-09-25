@@ -88,10 +88,77 @@ export const storeSettingsSchema = z
         radius: z.string().regex(/^\d+(\.\d+)?(rem|px)$/),
       })
       .partial(),
+    shipping: z
+      .object({
+        flatRateMinor: z.number().int().nonnegative(),
+        /** Subtotal at or above which shipping is free; null = never free */
+        freeOverMinor: z.number().int().nonnegative().nullable(),
+      })
+      .partial(),
   })
   .partial()
   .strict();
 export type StoreSettings = z.infer<typeof storeSettingsSchema>;
+
+// ---- Customers, cart, checkout, orders ----
+
+const email = z.string().trim().toLowerCase().email().max(254);
+
+export const customerRegisterSchema = z.object({
+  email,
+  password: z.string().min(8, "Use at least 8 characters").max(200),
+  name: z.string().trim().max(120).default(""),
+});
+export type CustomerRegisterInput = z.infer<typeof customerRegisterSchema>;
+
+export const cartAddSchema = z.object({
+  variantId: z.string().min(1),
+  quantity: z.number().int().min(1).max(99).default(1),
+});
+export type CartAddInput = z.infer<typeof cartAddSchema>;
+
+/** Quantity 0 removes the line. */
+export const cartUpdateSchema = z.object({
+  quantity: z.number().int().min(0).max(99),
+});
+export type CartUpdateInput = z.infer<typeof cartUpdateSchema>;
+
+export const addressSchema = z.object({
+  name: z.string().trim().min(1, "Name is required").max(120),
+  line1: z.string().trim().min(1, "Address is required").max(200),
+  line2: z.string().trim().max(200).default(""),
+  city: z.string().trim().min(1, "City is required").max(120),
+  postalCode: z.string().trim().min(1, "Postal code is required").max(20),
+  /** ISO 3166-1 alpha-2, e.g. "DE" */
+  country: z.string().trim().length(2, "Use a 2-letter country code").toUpperCase(),
+  phone: z.string().trim().max(40).default(""),
+});
+export type Address = z.infer<typeof addressSchema>;
+
+export const checkoutSchema = z.object({
+  email,
+  shippingAddress: addressSchema,
+  note: z.string().trim().max(1000).default(""),
+});
+export type CheckoutInput = z.infer<typeof checkoutSchema>;
+
+export const orderStatusSchema = z.enum(["PENDING", "PAID", "FULFILLED", "CANCELLED", "REFUNDED"]);
+export type OrderStatus = z.infer<typeof orderStatusSchema>;
+
+export const orderStatusUpdateSchema = z.object({
+  status: orderStatusSchema,
+  note: z.string().trim().max(1000).default(""),
+});
+export type OrderStatusUpdateInput = z.infer<typeof orderStatusUpdateSchema>;
+
+export const adminOrderListQuerySchema = z.object({
+  /** Order number, or part of the customer email */
+  q: z.string().trim().max(200).optional(),
+  status: orderStatusSchema.optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+});
+export type AdminOrderListQuery = z.infer<typeof adminOrderListQuerySchema>;
 
 export const ALLOWED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif", "image/avif"] as const;
 export const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;

@@ -1,0 +1,16 @@
+{
+  "name": "@ecom/store-config",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Compiles the root store.config.ts so the API can import it (the web app reads the file directly).",
+  "main": "dist/store.config.js",
+  "types": "dist/store.config.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json --watch --preserveWatchOutput"
+  },
+  "devDependencies": {
+    "@ecom/config": "workspace:*",
+    "typescript": "^5.8.0"
+  }
+}

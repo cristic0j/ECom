@@ -47,7 +47,7 @@ describe("API (e2e)", () => {
     prisma = app.get(PrismaService);
 
     await prisma.$executeRawUnsafe(
-      `TRUNCATE "Product", "Category", "AdminUser", "StoreSetting" RESTART IDENTITY CASCADE`,
+      `TRUNCATE "Product", "Category", "AdminUser", "StoreSetting", "Customer", "Cart", "Order" RESTART IDENTITY CASCADE`,
     );
     const passwordHash = await hash("pass12345");
     await prisma.adminUser.createMany({
@@ -231,6 +231,151 @@ describe("API (e2e)", () => {
 
     it("rejects unknown keys", async () => {
       await http().put("/api/admin/settings").set("Cookie", adminCookie).send({ secretKey: "x" }).expect(400);
+    });
+  });
+
+  describe("cart, checkout, orders", () => {
+    const address = { name: "Ada Buyer", line1: "1 Main St", city: "Berlin", postalCode: "10115", country: "de" };
+    let product: { id: string; variants: { id: string; sku: string }[] };
+    let guestOrder: { number: number; accessToken: string };
+
+    const shopBody = (priceA: number, status = "ACTIVE") =>
+      productBody({
+        slug: "e2e-shop",
+        title: "Shop Tee",
+        status,
+        variants: [
+          { ...(product && { id: product.variants[0].id }), sku: "SHOP-A", title: "A", priceMinor: priceA },
+          { ...(product && { id: product.variants[1].id }), sku: "SHOP-B", title: "B", priceMinor: 1500 },
+        ],
+      });
+
+    beforeAll(async () => {
+      await http()
+        .put("/api/admin/settings")
+        .set("Cookie", adminCookie)
+        .send({ currency: "EUR", shipping: { flatRateMinor: 500, freeOverMinor: 10000 } })
+        .expect(200);
+      product = (await http().post("/api/admin/products").set("Cookie", adminCookie).send(shopBody(2000)).expect(201)).body;
+    });
+
+    it("keeps a guest cart in a cookie and totals it on the server", async () => {
+      const guest = request.agent(app.getHttpServer());
+      expect((await guest.get("/api/cart").expect(200)).body).toMatchObject({ items: [], totalMinor: 0 });
+      await guest.post("/api/cart/items").send({ variantId: "nope" }).expect(404);
+
+      const added = await guest.post("/api/cart/items").send({ variantId: product.variants[0].id, quantity: 2 }).expect(201);
+      expect(added.get("Set-Cookie")?.join(";")).toMatch(/ecom_cart=.*HttpOnly/i);
+      await guest.post("/api/cart/items").send({ variantId: product.variants[0].id }).expect(201);
+
+      const cart = (await guest.get("/api/cart").expect(200)).body;
+      expect(cart).toMatchObject({ itemCount: 3, subtotalMinor: 6000, shippingMinor: 500, totalMinor: 6500, currency: "EUR" });
+
+      // Another visitor doesn't see it
+      expect((await http().get("/api/cart").expect(200)).body.items).toHaveLength(0);
+
+      await guest.patch(`/api/cart/items/${cart.items[0].id}`).send({ quantity: 1 }).expect(200);
+      expect((await guest.get("/api/cart").expect(200)).body.itemCount).toBe(1);
+    });
+
+    it("checks out a guest at the current catalog price and snapshots it", async () => {
+      const guest = request.agent(app.getHttpServer());
+      await guest.post("/api/checkout").send({ email: "a@b.dev", shippingAddress: address }).expect(400); // empty cart
+      await guest.post("/api/cart/items").send({ variantId: product.variants[0].id, quantity: 2 }).expect(201);
+      await guest.post("/api/checkout").send({ email: "not-an-email", shippingAddress: address }).expect(400);
+
+      // Price changes while the item sits in the cart; checkout must use the new price
+      await http().put(`/api/admin/products/${product.id}`).set("Cookie", adminCookie).send(shopBody(2500)).expect(200);
+
+      guestOrder = (await guest.post("/api/checkout").send({ email: "Guest@B.dev", shippingAddress: address }).expect(201)).body;
+      expect(guestOrder.number).toEqual(expect.any(Number));
+      expect((await guest.get("/api/cart").expect(200)).body.items).toHaveLength(0);
+
+      const order = (await http().get(`/api/orders/${guestOrder.number}?token=${guestOrder.accessToken}`).expect(200)).body;
+      expect(order).toMatchObject({
+        status: "PENDING",
+        email: "guest@b.dev",
+        subtotalMinor: 5000,
+        shippingMinor: 500,
+        totalMinor: 5500,
+        shippingAddress: { country: "DE" },
+        items: [{ sku: "SHOP-A", unitPriceMinor: 2500, quantity: 2 }],
+      });
+      expect(order.events).toBeUndefined();
+
+      await http().get(`/api/orders/${guestOrder.number}?token=wrong`).expect(404);
+      await http().get(`/api/orders/${guestOrder.number}`).expect(404);
+
+      // Later catalog edits don't rewrite the order
+      await http().put(`/api/admin/products/${product.id}`).set("Cookie", adminCookie).send(shopBody(9900)).expect(200);
+      const again = (await http().get(`/api/orders/${guestOrder.number}?token=${guestOrder.accessToken}`).expect(200)).body;
+      expect(again.items[0].unitPriceMinor).toBe(2500);
+    });
+
+    it("merges the guest cart at registration and keeps customer orders private", async () => {
+      const shopper = request.agent(app.getHttpServer());
+      await shopper.post("/api/cart/items").send({ variantId: product.variants[1].id, quantity: 4 }).expect(201);
+
+      await shopper.post("/api/account/register").send({ email: "Shopper@Test.dev", password: "short" }).expect(400);
+      const reg = await shopper
+        .post("/api/account/register")
+        .send({ email: "Shopper@Test.dev", password: "pass12345", name: "Sam" })
+        .expect(201);
+      expect(reg.body).toEqual({ id: expect.any(String), email: "shopper@test.dev", name: "Sam" });
+      expect(reg.get("Set-Cookie")?.join(";")).toMatch(/ecom_customer=.*HttpOnly/i);
+      await http().post("/api/account/register").send({ email: "shopper@test.dev", password: "pass12345" }).expect(409);
+
+      const cart = (await shopper.get("/api/cart").expect(200)).body;
+      expect(cart).toMatchObject({ itemCount: 4, subtotalMinor: 6000 });
+
+      // A customer session is not an admin session
+      await shopper.get("/api/admin/orders").expect(401);
+
+      const placed = (await shopper.post("/api/checkout").send({ email: "shopper@test.dev", shippingAddress: address }).expect(201)).body;
+      const mine = (await shopper.get("/api/account/orders").expect(200)).body;
+      expect(mine.map((o: { number: number }) => o.number)).toEqual([placed.number]);
+      await shopper.get(`/api/account/orders/${guestOrder.number}`).expect(404);
+
+      await shopper.post("/api/account/logout").expect(204);
+      await shopper.get("/api/account/me").expect(401);
+      expect((await shopper.get("/api/cart").expect(200)).body.items).toHaveLength(0);
+
+      const back = request.agent(app.getHttpServer());
+      await back.post("/api/account/login").send({ email: "shopper@test.dev", password: "wrong" }).expect(401);
+      await back.post("/api/account/login").send({ email: "SHOPPER@test.dev", password: "pass12345" }).expect(200);
+      expect((await back.get("/api/account/orders").expect(200)).body).toHaveLength(1);
+    });
+
+    it("drops lines whose product is unpublished", async () => {
+      const guest = request.agent(app.getHttpServer());
+      await guest.post("/api/cart/items").send({ variantId: product.variants[1].id }).expect(201);
+      await http().put(`/api/admin/products/${product.id}`).set("Cookie", adminCookie).send(shopBody(2500, "DRAFT")).expect(200);
+      expect((await guest.get("/api/cart").expect(200)).body.items).toHaveLength(0);
+      await guest.post("/api/cart/items").send({ variantId: product.variants[1].id }).expect(404);
+      await http().put(`/api/admin/products/${product.id}`).set("Cookie", adminCookie).send(shopBody(2500)).expect(200);
+    });
+
+    it("lets admins find orders and move them through allowed statuses", async () => {
+      await http().get("/api/admin/orders").expect(401);
+      const list = (await http().get("/api/admin/orders").set("Cookie", editorCookie).expect(200)).body;
+      expect(list.total).toBe(2);
+      const byNumber = (await http().get(`/api/admin/orders?q=%23${guestOrder.number}`).set("Cookie", adminCookie).expect(200)).body;
+      expect(byNumber.items.map((o: { number: number }) => o.number)).toEqual([guestOrder.number]);
+      expect((await http().get("/api/admin/orders?q=shopper").set("Cookie", adminCookie).expect(200)).body.total).toBe(1);
+
+      const path = `/api/admin/orders/${guestOrder.number}/status`;
+      await http().patch(path).set("Cookie", adminCookie).send({ status: "FULFILLED" }).expect(409);
+      await http().patch(path).set("Cookie", adminCookie).send({ status: "PAID", note: "Bank transfer" }).expect(200);
+      const order = (await http().patch(path).set("Cookie", editorCookie).send({ status: "FULFILLED" }).expect(200)).body;
+      expect(order.status).toBe("FULFILLED");
+      expect(order.events).toMatchObject([
+        { toStatus: "PENDING", actor: "guest" },
+        { fromStatus: "PENDING", toStatus: "PAID", actor: "admin@test.dev", note: "Bank transfer" },
+        { fromStatus: "PAID", toStatus: "FULFILLED", actor: "editor@test.dev" },
+      ]);
+
+      const counts = (await http().get("/api/admin/orders/counts").set("Cookie", adminCookie).expect(200)).body;
+      expect(counts).toEqual({ FULFILLED: 1, PENDING: 1 });
     });
   });
 });

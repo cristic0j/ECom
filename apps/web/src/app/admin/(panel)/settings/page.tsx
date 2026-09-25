@@ -4,6 +4,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import type { StoreSettings } from "@ecom/shared";
 import { storeConfig } from "@store-config";
 import { adminApi } from "@/lib/admin-api";
+import { minorToInput, parseMoneyToMinor } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/form";
 import { Alert, Card } from "@/components/ui/misc";
@@ -20,6 +21,8 @@ const defaults = {
   primaryForeground: storeConfig.theme.primaryForeground,
   accent: storeConfig.theme.accent,
   radius: storeConfig.theme.radius,
+  shippingFlat: minorToInput(storeConfig.shipping.flatRateMinor),
+  shippingFreeOver: minorToInput(storeConfig.shipping.freeOverMinor),
 };
 type Form = Record<keyof typeof defaults, string>;
 
@@ -45,6 +48,8 @@ export default function SettingsPage() {
           ...f,
           ...Object.fromEntries(Object.entries(s).filter(([, v]) => typeof v === "string")),
           ...s.theme,
+          ...(s.shipping?.flatRateMinor !== undefined && { shippingFlat: minorToInput(s.shipping.flatRateMinor) }),
+          ...(s.shipping?.freeOverMinor !== undefined && { shippingFreeOver: minorToInput(s.shipping.freeOverMinor) }),
         })),
       )
       .catch((e) => setError(e.message));
@@ -58,6 +63,12 @@ export default function SettingsPage() {
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
+    const flatRateMinor = parseMoneyToMinor(form.shippingFlat);
+    const freeOverMinor = form.shippingFreeOver.trim() ? parseMoneyToMinor(form.shippingFreeOver) : null;
+    if (Number.isNaN(flatRateMinor) || Number.isNaN(freeOverMinor)) {
+      setError("Enter shipping amounts like 4.99 (leave the free-shipping threshold empty to never ship free).");
+      return;
+    }
     const patch: StoreSettings = {
       name: form.name,
       tagline: form.tagline,
@@ -65,6 +76,7 @@ export default function SettingsPage() {
       currency: form.currency,
       locale: form.locale,
       theme: { primary: form.primary, primaryForeground: form.primaryForeground, accent: form.accent, radius: form.radius },
+      shipping: { flatRateMinor, freeOverMinor },
     };
     try {
       await adminApi.updateSettings(patch);
@@ -129,6 +141,23 @@ export default function SettingsPage() {
               </div>
             </Field>
           ))}
+        </Card>
+        <Card className="space-y-4">
+          <h2 className="font-semibold">Shipping</h2>
+          <p className="text-sm text-muted-foreground">Prices include tax. Shipping is added to the order total at checkout.</p>
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Flat shipping rate" htmlFor="shippingFlat" hint="e.g. 4.99; 0 for always free">
+              <Input id="shippingFlat" inputMode="decimal" value={form.shippingFlat} onChange={set("shippingFlat")} />
+            </Field>
+            <Field label="Free shipping from" htmlFor="shippingFreeOver" hint="Order subtotal; empty = never free">
+              <Input
+                id="shippingFreeOver"
+                inputMode="decimal"
+                value={form.shippingFreeOver}
+                onChange={set("shippingFreeOver")}
+              />
+            </Field>
+          </div>
         </Card>
       </fieldset>
     </form>

@@ -42,6 +42,8 @@ export class AdminAuthGuard implements CanActivate {
     } catch {
       throw new UnauthorizedException("Session expired or invalid");
     }
+    // Tokens issued before `typ` existed have none; anything else (e.g. a customer token) is rejected
+    if (payload.typ !== undefined && payload.typ !== "admin") throw new UnauthorizedException("Not authenticated");
 
     // Re-read the user so deleted admins / changed roles take effect immediately
     const admin = await this.auth.getUser(payload.sub);

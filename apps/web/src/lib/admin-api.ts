@@ -1,11 +1,14 @@
 "use client";
 
 import type {
+  AdminOrderListQuery,
   AdminProductListQuery,
   AdminUserDto,
-  ApiError,
   CategoryDto,
   CategoryInput,
+  OrderDto,
+  OrderStatus,
+  OrderSummaryDto,
   Paginated,
   ProductDto,
   ProductInput,
@@ -13,49 +16,9 @@ import type {
   ProductSummaryDto,
   StoreSettings,
 } from "@ecom/shared";
+import { json, request, toQuery } from "./api-client";
 
-// Same-origin: next.config.ts proxies /api/* to the Nest API, so the auth cookie is first-party
-const API_URL = "/api";
-
-export class ApiRequestError extends Error {
-  constructor(
-    public readonly status: number,
-    public readonly body: ApiError | null,
-  ) {
-    super(body?.message ?? `Request failed (${status})`);
-  }
-
-  /** zod field errors from a 400 "Validation failed" response, keyed by field path. */
-  get fieldErrors(): Record<string, string[]> {
-    const details = this.body?.details as { fieldErrors?: Record<string, string[]> } | undefined;
-    return details?.fieldErrors ?? {};
-  }
-}
-
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const isForm = init.body instanceof FormData;
-  const res = await fetch(`${API_URL}${path}`, {
-    ...init,
-    credentials: "include",
-    headers: { ...(isForm ? {} : { "Content-Type": "application/json" }), ...init.headers },
-  });
-  if (res.status === 204) return undefined as T;
-  const body = await res.json().catch(() => null);
-  if (!res.ok) throw new ApiRequestError(res.status, body);
-  return body as T;
-}
-
-const json = (method: string, data?: unknown): RequestInit => ({
-  method,
-  body: data === undefined ? undefined : JSON.stringify(data),
-});
-
-function toQuery(params: Record<string, unknown>): string {
-  const qs = new URLSearchParams();
-  for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== "") qs.set(k, String(v));
-  const s = qs.toString();
-  return s ? `?${s}` : "";
-}
+export { ApiRequestError } from "./api-client";
 
 export const adminApi = {
   login: (email: string, password: string) => request<AdminUserDto>("/auth/login", json("POST", { email, password })),
@@ -76,6 +39,12 @@ export const adminApi = {
   updateCategory: (id: string, input: CategoryInput) =>
     request<CategoryDto>(`/admin/categories/${id}`, json("PUT", input)),
   deleteCategory: (id: string) => request<void>(`/admin/categories/${id}`, json("DELETE")),
+
+  listOrders: (q: Partial<AdminOrderListQuery>) => request<Paginated<OrderSummaryDto>>(`/admin/orders${toQuery(q)}`),
+  orderCounts: () => request<Partial<Record<OrderStatus, number>>>("/admin/orders/counts"),
+  getOrder: (number: number) => request<OrderDto>(`/admin/orders/${number}`),
+  setOrderStatus: (number: number, status: OrderStatus, note = "") =>
+    request<OrderDto>(`/admin/orders/${number}/status`, json("PATCH", { status, note })),
 
   getSettings: () => request<StoreSettings>("/settings"),
   updateSettings: (patch: StoreSettings) => request<StoreSettings>("/admin/settings", json("PUT", patch)),

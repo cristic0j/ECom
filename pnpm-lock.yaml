@@ -184,6 +184,9 @@ importers:
       '@ecom/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@ecom/store-config':
+        specifier: workspace:*
+        version: link:../../packages/store-config
       '@nestjs/common':
         specifier: ^11.1.0
         version: 11.2.5(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@8.1.1)
@@ -351,6 +354,15 @@ importers:
       zod:
         specifier: ^3.25.0
         version: 3.25.76
+    devDependencies:
+      '@ecom/config':
+        specifier: workspace:*
+        version: link:../config
+      typescript:
+        specifier: ^5.8.0
+        version: 5.9.3
+
+  packages/store-config:
     devDependencies:
       '@ecom/config':
         specifier: workspace:*

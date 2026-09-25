@@ -8,7 +8,7 @@ import { buttonClass } from "@/components/ui/button";
 import { Card } from "@/components/ui/misc";
 import { PageHeader, useAdmin } from "@/components/admin/admin-shell";
 
-type Stats = { active: number; draft: number; archived: number; categories: number };
+type Stats = { active: number; draft: number; archived: number; categories: number; pending: number; toShip: number };
 
 export default function DashboardPage() {
   const admin = useAdmin();
@@ -17,12 +17,22 @@ export default function DashboardPage() {
   useEffect(() => {
     const count = (status: "ACTIVE" | "DRAFT" | "ARCHIVED") =>
       adminApi.listProducts({ status, pageSize: 1 }).then((r) => r.total);
-    Promise.all([count("ACTIVE"), count("DRAFT"), count("ARCHIVED"), adminApi.listCategories()]).then(
-      ([active, draft, archived, cats]) => setStats({ active, draft, archived, categories: cats.length }),
+    Promise.all([count("ACTIVE"), count("DRAFT"), count("ARCHIVED"), adminApi.listCategories(), adminApi.orderCounts()]).then(
+      ([active, draft, archived, cats, orders]) =>
+        setStats({
+          active,
+          draft,
+          archived,
+          categories: cats.length,
+          pending: orders.PENDING ?? 0,
+          toShip: orders.PAID ?? 0,
+        }),
     );
   }, []);
 
   const tiles: [string, number | undefined, string][] = [
+    ["Awaiting payment", stats?.pending, "/admin/orders?status=PENDING"],
+    ["Paid, to fulfil", stats?.toShip, "/admin/orders?status=PAID"],
     ["Active products", stats?.active, "/admin/products?status=ACTIVE"],
     ["Drafts", stats?.draft, "/admin/products?status=DRAFT"],
     ["Archived", stats?.archived, "/admin/products?status=ARCHIVED"],
@@ -39,7 +49,7 @@ export default function DashboardPage() {
           </Link>
         }
       />
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {tiles.map(([label, value, href]) => (
           <Link key={label} href={href}>
             <Card className="transition hover:border-primary">

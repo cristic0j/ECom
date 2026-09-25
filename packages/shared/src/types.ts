@@ -1,3 +1,5 @@
+import type { Address, OrderStatus } from "./schemas";
+
 export type ProductStatus = "DRAFT" | "ACTIVE" | "ARCHIVED";
 
 export interface CategoryDto {
@@ -71,4 +73,85 @@ export interface ApiError {
   error: string;
   message: string;
   details?: unknown;
+}
+
+// ---- Customers, cart, checkout, orders ----
+
+
+export interface CustomerDto {
+  id: string;
+  email: string;
+  name: string;
+}
+
+export interface CartItemDto {
+  id: string;
+  variantId: string;
+  quantity: number;
+  productSlug: string;
+  productTitle: string;
+  variantTitle: string;
+  sku: string;
+  unitPriceMinor: number;
+  lineTotalMinor: number;
+  image: ImageDto | null;
+}
+
+export interface CartDto {
+  items: CartItemDto[];
+  itemCount: number;
+  subtotalMinor: number;
+  shippingMinor: number;
+  totalMinor: number;
+  currency: string;
+  /** Subtotal needed for free shipping; null when it never applies */
+  freeShippingOverMinor: number | null;
+}
+
+export interface OrderItemDto {
+  id: string;
+  variantId: string | null;
+  productTitle: string;
+  variantTitle: string;
+  sku: string;
+  unitPriceMinor: number;
+  quantity: number;
+  lineTotalMinor: number;
+}
+
+export interface OrderEventDto {
+  id: string;
+  fromStatus: OrderStatus | null;
+  toStatus: OrderStatus;
+  actor: string;
+  note: string;
+  createdAt: string;
+}
+
+export interface OrderSummaryDto {
+  id: string;
+  number: number;
+  email: string;
+  status: OrderStatus;
+  currency: string;
+  totalMinor: number;
+  itemCount: number;
+  createdAt: string;
+}
+
+export interface OrderDto extends OrderSummaryDto {
+  customerId: string | null;
+  subtotalMinor: number;
+  shippingMinor: number;
+  shippingAddress: Address;
+  note: string;
+  items: OrderItemDto[];
+  /** Admin views only */
+  events?: OrderEventDto[];
+}
+
+/** Returned by checkout; the token lets a guest open their confirmation page. */
+export interface CheckoutResultDto {
+  number: number;
+  accessToken: string;
 }

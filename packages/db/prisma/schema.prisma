@@ -78,6 +78,8 @@ model ProductVariant {
   isDefault      Boolean        @default(false)
   position       Int            @default(0)
   images         ProductImage[]
+  cartItems      CartItem[]
+  orderItems     OrderItem[]
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
 
@@ -106,6 +108,111 @@ model AdminUser {
   role         AdminRole @default(EDITOR)
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  FULFILLED
+  CANCELLED
+  REFUNDED
+}
+
+/// Storefront shopper. Separate from AdminUser, with its own auth cookie.
+model Customer {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String   @default("")
+  cart         Cart?
+  orders       Order[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+/// A guest cart is found by `token` (cookie); a customer's cart by `customerId`. Guest carts merge in at login.
+model Cart {
+  id         String     @id @default(cuid())
+  token      String     @unique
+  customerId String?    @unique
+  customer   Customer?  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  items      CartItem[]
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  @@index([updatedAt])
+}
+
+model CartItem {
+  id        String         @id @default(cuid())
+  cartId    String
+  cart      Cart           @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  variantId String
+  variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  quantity  Int
+  createdAt DateTime       @default(now())
+
+  @@unique([cartId, variantId])
+}
+
+model Order {
+  id              String      @id @default(cuid())
+  /// Human-facing order number, e.g. #1001
+  number          Int         @unique @default(autoincrement())
+  /// Secret for viewing the order without an account (guest confirmation link)
+  accessToken     String      @unique
+  customerId      String?
+  customer        Customer?   @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  email           String
+  status          OrderStatus @default(PENDING)
+  currency        String
+  subtotalMinor   Int
+  shippingMinor   Int
+  totalMinor      Int
+  /// Snapshot of the address at purchase time
+  shippingAddress Json
+  note            String      @default("")
+  items           OrderItem[]
+  events          OrderEvent[]
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@index([customerId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+/// Line items snapshot title, sku and price so later catalog edits never change past orders.
+model OrderItem {
+  id             String          @id @default(cuid())
+  orderId        String
+  order          Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  variantId      String?
+  variant        ProductVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
+  productTitle   String
+  variantTitle   String
+  sku            String
+  unitPriceMinor Int
+  quantity       Int
+  lineTotalMinor Int
+
+  @@index([orderId])
+  @@index([variantId])
+}
+
+/// Status history: who changed what, and when.
+model OrderEvent {
+  id         String       @id @default(cuid())
+  orderId    String
+  order      Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  fromStatus OrderStatus?
+  toStatus   OrderStatus
+  /// Admin email, or "customer" / "system"
+  actor      String
+  note       String       @default("")
+  createdAt  DateTime     @default(now())
+
+  @@index([orderId])
 }
 
 model StoreSetting {

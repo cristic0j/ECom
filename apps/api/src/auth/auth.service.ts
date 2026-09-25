@@ -8,6 +8,8 @@ import { PrismaService } from "../prisma/prisma.service";
 export interface AdminJwtPayload {
   sub: string;
   role: AdminUser["role"];
+  /** Token kind; customer tokens are signed with the same secret and must not pass as admin */
+  typ?: string;
 }
 
 // Verified against when the email is unknown, so response time doesn't reveal which emails exist
@@ -25,7 +27,7 @@ export class AuthService {
     const valid = await verify(user?.passwordHash ?? (await DUMMY_HASH_PROMISE), password);
     if (!user || !valid) throw new UnauthorizedException("Invalid email or password");
 
-    const payload: AdminJwtPayload = { sub: user.id, role: user.role };
+    const payload: AdminJwtPayload = { sub: user.id, role: user.role, typ: "admin" };
     return { token: await this.jwt.signAsync(payload), user: toAdminUserDto(user) };
   }
 

@@ -1,4 +1,5 @@
 import "server-only";
+import { notFound } from "next/navigation";
 import { cache } from "react";
 import { formatMoney } from "@ecom/shared";
 import { storeConfig } from "@store-config";
@@ -33,4 +34,9 @@ export const getStore = cache(async (): Promise<Store> => {
 export async function getMoneyFormatter() {
   const { currency, locale } = await getStore();
   return (minor: number) => formatMoney(minor, currency, locale);
+}
+
+/** Commerce pages (cart, checkout, account) 404 when `features.cart` is off. */
+export async function requireCartFeature(): Promise<void> {
+  if (!(await getStore()).features.cart) notFound();
 }

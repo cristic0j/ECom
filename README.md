@@ -3,7 +3,8 @@
 A reusable single-store e-commerce template. Every store is its own deployment of this same codebase. You customize a store through `store.config.ts`, environment variables and the admin **Settings** page, never by forking the code.
 
 - **Storefront:** home, category pages with filters and sorting, search, product pages with a variant picker, sitemap and JSON-LD
-- **Admin** (`/admin`): products with variants and images, categories, and store settings (name, currency, theme colors)
+- **Shopping:** cart (for guests too), checkout, optional customer accounts with order history
+- **Admin** (`/admin`): orders (with status changes and history), products with variants and images, categories, and store settings (name, currency, theme colors, shipping)
 - **Stack:** Next.js 16 (web), NestJS 11 (API), PostgreSQL 16 + Prisma 6, pnpm workspaces + Turborepo
 
 ```
@@ -11,6 +12,7 @@ apps/api          NestJS API (port 4000, prefix /api, Swagger at /api/docs)
 apps/web          Next.js storefront + /admin (port 3000)
 packages/db       Prisma schema, migrations, seed
 packages/shared   zod schemas + types shared by API and web
+packages/store-config  compiles store.config.ts so the API can read it
 store.config.ts   per-store defaults
 ```
 
@@ -44,10 +46,13 @@ cd apps/web && pnpm test:e2e        # Playwright; starts the dev servers if they
    - `name`, `tagline`, `logoUrl`
    - `currency` (ISO code, e.g. `EUR`) and `locale` (e.g. `de-DE`)
    - `theme`: colors as HSL values, plus the corner `radius`
-   - `features`: modules to switch on as they become available
+   - `features`: `cart` turns on accounts, cart, checkout and orders; the others are for later phases
+   - `shipping`: flat rate and free-shipping threshold, in cents (prices include tax)
    - `catalog.pageSize`
 
-   These are defaults. Name, currency, locale and theme can also be changed later from the admin Settings page without redeploying.
+   These are defaults. Name, currency, locale, theme and shipping can also be changed later from the admin Settings page without redeploying.
+
+   **Payments:** card payments arrive in a later phase. Until then orders are placed as *pending*, you arrange payment with the customer (bank transfer or cash on delivery), and you mark the order paid in the admin.
 
 3. **Configure the environment.** Copy `.env.example` to `.env`, or set the variables on your hosting platform:
 

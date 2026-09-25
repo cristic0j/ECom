@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { formatMoney, type ProductDto, type VariantDto } from "@ecom/shared";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/misc";
+import { AddToCart } from "./add-to-cart";
 
 /** Option names in first-seen order with their distinct values, e.g. { size: ["S","M"], color: [...] }. */
 function collectOptions(variants: VariantDto[]): [string, string[]][] {
@@ -132,6 +133,8 @@ export function ProductView({ product, currency, locale }: { product: ProductDto
             </div>
           </fieldset>
         ))}
+
+        <AddToCart variantId={variant?.id} />
 
         {variant && <p className="text-xs text-muted-foreground">SKU: {variant.sku}</p>}
 

@@ -1,0 +1,8 @@
+{
+  "extends": "@ecom/config/tsconfig.lib.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "../.."
+  },
+  "files": ["../../store.config.ts"]
+}

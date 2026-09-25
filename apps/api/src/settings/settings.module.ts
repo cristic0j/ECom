@@ -1,7 +1,8 @@
-import { Body, Controller, Get, Injectable, Module, Put, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Global, Injectable, Module, Put, UseGuards } from "@nestjs/common";
 import { ApiCookieAuth, ApiTags } from "@nestjs/swagger";
 import type { Prisma } from "@ecom/db";
-import { storeSettingsSchema, type StoreSettings } from "@ecom/shared";
+import { storeSettingsSchema, type ShippingRules, type StoreSettings } from "@ecom/shared";
+import { storeConfig } from "@ecom/store-config";
 import { PrismaService } from "../prisma/prisma.service";
 import { ZodValidationPipe } from "../common/zod-validation.pipe";
 import { AdminAuthGuard, Roles } from "../auth/admin-auth.guard";
@@ -18,10 +19,24 @@ export class SettingsService {
     return parsed.success ? parsed.data : {};
   }
 
-  /** Merges the patch over current settings; theme is merged one level deep. */
+  /** What checkout needs: admin settings layered over store.config.ts defaults. */
+  async commerce(): Promise<{ currency: string; shipping: ShippingRules }> {
+    const s = await this.get();
+    return {
+      currency: s.currency ?? storeConfig.currency,
+      shipping: { ...storeConfig.shipping, ...s.shipping },
+    };
+  }
+
+  /** Merges the patch over current settings; theme and shipping are merged one level deep. */
   async update(patch: StoreSettings): Promise<StoreSettings> {
     const current = await this.get();
-    const next: StoreSettings = { ...current, ...patch, theme: { ...current.theme, ...patch.theme } };
+    const next: StoreSettings = {
+      ...current,
+      ...patch,
+      theme: { ...current.theme, ...patch.theme },
+      shipping: { ...current.shipping, ...patch.shipping },
+    };
     const value = next as Prisma.InputJsonValue;
     await this.prisma.storeSetting.upsert({
       where: { key: SETTINGS_KEY },
@@ -52,8 +67,10 @@ export class SettingsController {
   }
 }
 
+@Global()
 @Module({
   controllers: [SettingsController],
   providers: [SettingsService],
+  exports: [SettingsService],
 })
 export class SettingsModule {}
