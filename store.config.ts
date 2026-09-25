@@ -5,7 +5,7 @@
 export const storeConfig = {
   name: "Demo Store",
   tagline: "Quality products, delivered.",
-  logoUrl: "/logo.svg",
+  logoUrl: "", // optional; header shows the store name when empty
   currency: "EUR",
   locale: "en-US",
   theme: {
