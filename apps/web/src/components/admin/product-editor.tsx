@@ -49,6 +49,8 @@ export function ProductEditor({ product }: { product?: ProductDto }) {
   const router = useRouter();
   const admin = useAdmin();
   const isNew = !product;
+  // Last saved version: drives the header and the View link, which must not reflect unsaved edits
+  const [saved, setSaved] = useState(product);
 
   const [title, setTitle] = useState(product?.title ?? "");
   const [slug, setSlug] = useState(product?.slug ?? "");
@@ -138,13 +140,14 @@ export function ProductEditor({ product }: { product?: ProductDto }) {
 
     setSaving(true);
     try {
-      const saved = isNew ? await adminApi.createProduct(input) : await adminApi.updateProduct(product.id, input);
+      const result = isNew ? await adminApi.createProduct(input) : await adminApi.updateProduct(product.id, input);
       await revalidateStorefront();
       if (isNew) {
-        router.replace(`/admin/products/${saved.id}`);
+        router.replace(`/admin/products/${result.id}`);
       } else {
         // Pick up server-assigned variant ids so the next save updates instead of re-creating
-        setRows(toRows(saved));
+        setRows(toRows(result));
+        setSaved(result);
         setSavedAt(new Date());
       }
     } catch (err) {
@@ -159,7 +162,7 @@ export function ProductEditor({ product }: { product?: ProductDto }) {
   };
 
   const onDelete = async () => {
-    if (!product || !confirm(`Delete "${product.title}"? This cannot be undone.`)) return;
+    if (!product || !confirm(`Delete "${saved?.title ?? product.title}"? This cannot be undone.`)) return;
     try {
       await adminApi.deleteProduct(product.id);
       await revalidateStorefront();
@@ -172,11 +175,11 @@ export function ProductEditor({ product }: { product?: ProductDto }) {
   return (
     <form onSubmit={onSubmit} noValidate>
       <PageHeader
-        title={isNew ? "New product" : product.title}
+        title={saved ? saved.title : "New product"}
         actions={
           <>
-            {!isNew && product.status === "ACTIVE" && (
-              <Link href={`/p/${product.slug}`} target="_blank" className={buttonClass("secondary")}>
+            {saved?.status === "ACTIVE" && (
+              <Link href={`/p/${saved.slug}`} target="_blank" className={buttonClass("secondary")}>
                 <ExternalLink className="size-4" /> View
               </Link>
             )}

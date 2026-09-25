@@ -10,7 +10,7 @@ The work is split into four phases:
 
 | Phase | Scope | Status |
 |---|---|---|
-| 1 | Product catalog + admin panel | 🟡 almost done |
+| 1 | Product catalog + admin panel | ✅ done (2026-09-25) |
 | 2 | Customer accounts, cart, checkout, orders | ⬜ not started |
 | 3 | Payments (Stripe, via a provider interface) | ⬜ not started |
 | 4 | Stock management (per-variant inventory) | ⬜ not started |
@@ -63,7 +63,7 @@ pnpm --filter @ecom/web dev     # http://localhost:3000  (admin: /admin)
 4. **MinIO** Docker images can't be pulled any more (the pull fails with "access denied"), so there's no object store container. Media uses `STORAGE_DRIVER=local` (files go to `apps/api/uploads`, served at `/uploads`), and `s3` is available for production.
 5. **Prisma blocks `migrate reset`** when an AI agent runs it. Don't try to bypass that; use `migrate dev` plus the idempotent seed.
 6. **pnpm 12** needs dependency build scripts approved in the `allowBuilds:` map in `pnpm-workspace.yaml`. When `pnpm install` reports ERR_PNPM_IGNORED_BUILDS, add the package there.
-7. The previous session left the API running from `apps/api/dist` on port 4000. Stop it with `pkill -f "node dist/main.js"`.
+7. If something is already on port 4000 (for example an old API left running from `apps/api/dist`), stop it with `pkill -f "node dist/main.js"` before running `pnpm dev`.
 
 ---
 
@@ -127,27 +127,27 @@ pnpm --filter @ecom/web dev     # http://localhost:3000  (admin: /admin)
 
 ---
 
-## Phase 1: what's left (do these next, in order)
+## Phase 1: final steps (all done; kept for the record)
+
+**Next up: Phase 2** (see below).
 
 1. ~~Debug the Playwright run~~ ✅ done 2026-09-25. All 5 tests pass, cold or warm, in about 8s. Causes:
    - The Playwright `webServer` commands went through `pnpm`, which doesn't forward SIGTERM, so `dotenv` → `next dev` was orphaned after each run and the next run reused a broken leftover server. `playwright.config.ts` now calls the `dotenv`/`next`/`nest` binaries directly, with `gracefulShutdown`.
    - `getByLabel("Price for M")` also matched "Compare-at price for M"; it's now `{ exact: true }`.
    - The app itself was fine: it was checked by hand in a browser (storefront, variant picker, admin login). A CSP "eval" warning in the DevTools Issues tab came from the browser (most likely an extension); the app sends no CSP.
 2. ~~Commit the web app~~ ✅ done 2026-09-25. The root `.gitignore` entries `test-results` / `playwright-report` do apply under `apps/web`.
-3. **Root `pnpm dev`:** check that turbo runs the API and web together. The shared package has a `dev` watch script; the db package has none, so it has to be built first.
-4. **README.md:** how to launch a new store:
-   1. Clone the repo.
-   2. Edit `store.config.ts` (name, currency, locale, theme, features).
-   3. Copy `.env.example` to `.env` and set `JWT_SECRET`, the `ADMIN_*` values, and `STORAGE_DRIVER=s3` with the `S3_*` settings plus `IMAGE_HOSTS` for production.
-   4. Migrate, seed and deploy.
+3. ~~Root `pnpm dev`~~ ✅ verified 2026-09-25, no changes needed. Turbo's `dev` task `dependsOn: ["^build"]` builds `@ecom/db` (including `prisma generate`) and `@ecom/shared` first, then runs the shared `tsc --watch`, the API (`nest --watch`) and web (`next dev`) together. Everything is up in about 7s and stops cleanly with Ctrl-C.
+4. ~~README.md~~ ✅ It covers local dev, launching a new store (config, env table, deploy order) and the deploy topology.
+   - **Build-order constraint:** `next build` prerenders store pages from the live API and **fails if the API is unreachable**, so deploy the API first and build the web app second. If that's a problem for a hosting platform, make the store pages render on first request instead of at build time.
+5. ~~Smaller follow-ups~~ ✅
+   - Pagination: now a windowed list (`pageWindow()` in `components/store/listing.tsx`, e.g. `1 … 9 10 11 … 20`) with Previous/Next links.
+   - Product editor: the header and View link use the last saved product (`saved` state), not the stale prop.
+   - Seed: `SEED_DEMO=false` creates only the admin user. The seed no longer prints the password.
+   - `JWT_SECRET`: the API refuses to start with `NODE_ENV=production` if the secret is the placeholder or under 32 characters (`config/env.ts`).
 
-   Also describe the deploy topology: web and API behind one domain, or `API_INTERNAL_URL` pointing at a private API host.
-5. **Smaller follow-ups found during the build:**
-   - Storefront pagination renders every page number; switch to a windowed list.
-   - The "View" link in the product editor uses the stale `product.status` from before a save.
-   - The seed uses `picsum.photos` images. That's fine for the demo, but new stores should replace them.
-   - Consider a CI workflow (GitHub Actions) that starts Postgres and runs the unit, API e2e and Playwright suites.
-   - Rotate `JWT_SECRET` in production; `.env.example` ships a placeholder.
+**Still open (optional, not blocking Phase 2):**
+- A CI workflow (GitHub Actions) that starts Postgres and runs the unit, API e2e and Playwright suites.
+- No unit test runner for `apps/web` yet; `pageWindow()` was checked by hand.
 
 ---
 

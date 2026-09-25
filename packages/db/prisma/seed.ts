@@ -15,6 +15,22 @@ async function main() {
     create: { email, name: "Admin", role: AdminRole.ADMIN, passwordHash: await hash(password) },
   });
 
+  // Real stores start with an empty catalog: SEED_DEMO=false creates only the admin user
+  if (process.env.SEED_DEMO !== "false") await seedDemoCatalog();
+
+  // Keep the denormalized min price in sync (also backfills rows created before the column existed)
+  for (const p of await prisma.product.findMany({ include: { variants: true } })) {
+    if (!p.variants.length) continue;
+    const priceMinMinor = Math.min(...p.variants.map((v) => v.priceMinor));
+    if (priceMinMinor !== p.priceMinMinor) {
+      await prisma.product.update({ where: { id: p.id }, data: { priceMinMinor } });
+    }
+  }
+
+  console.log(`Seeded. Admin login: ${email}`);
+}
+
+async function seedDemoCatalog() {
   const apparel = await prisma.category.upsert({
     where: { slug: "apparel" },
     update: {},
@@ -87,17 +103,6 @@ async function main() {
       },
     });
   }
-
-  // Keep the denormalized min price in sync (also backfills rows created before the column existed)
-  for (const p of await prisma.product.findMany({ include: { variants: true } })) {
-    if (!p.variants.length) continue;
-    const priceMinMinor = Math.min(...p.variants.map((v) => v.priceMinor));
-    if (priceMinMinor !== p.priceMinMinor) {
-      await prisma.product.update({ where: { id: p.id }, data: { priceMinMinor } });
-    }
-  }
-
-  console.log(`Seeded. Admin login: ${email} / ${password}`);
 }
 
 main()

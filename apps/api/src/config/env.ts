@@ -17,6 +17,10 @@ const schema = z
     S3_PUBLIC_URL: z.string().optional(),
   })
   .refine(
+    (e) => e.NODE_ENV !== "production" || (e.JWT_SECRET.length >= 32 && !e.JWT_SECRET.startsWith("change-me")),
+    "In production JWT_SECRET must be a random string of at least 32 characters (e.g. `openssl rand -base64 48`)",
+  )
+  .refine(
     (e) => e.STORAGE_DRIVER !== "s3" || (e.S3_BUCKET && e.S3_ACCESS_KEY && e.S3_SECRET_KEY && e.S3_PUBLIC_URL),
     "STORAGE_DRIVER=s3 requires S3_BUCKET, S3_ACCESS_KEY, S3_SECRET_KEY and S3_PUBLIC_URL",
   );
