@@ -25,7 +25,7 @@ Full original plan: `~/.claude/plans/i-am-planning-to-recursive-shell.md`
 - The store owner tested the order emails and password reset by hand in the browser, and everything worked. Committed as `4809d70`.
 - **Add to cart fix:** clicking repeatedly used to keep adding items. Now `components/store/add-to-cart.tsx` shows "Add to cart" until the selected variant is in the cart, then switches to a − / quantity / + stepper (− at 1 removes the line). One request runs at a time. The Playwright guest-checkout test covers it; 7/7 pass.
 - The store owner asked about the "Fulfilled" status: the admin button says "Mark as fulfilled", but the email says "has shipped". Optionally rename the admin label to "Shipped" (just the wording). The store owner didn't want a separate "Delivered" step.
-- **No git remote:** the repo exists only on this Mac. Recommend a private GitHub repo (as a backup, and needed for Railway/Render deploys) before deploying.
+- **GitHub backup:** private repo **github.com/cristic0j/ECom** (checked: an anonymous API request returns 404). The store owner pushes with **GitHub Desktop**. Git on the command line has no GitHub credentials here (`git fetch` fails asking for a username), so after committing, ask the store owner to click "Push origin". `gh` is installed but not logged in.
 - **Phase 3: Stripe card payments** built and switched on (`features.payments: true`). The store owner chose: Stripe's hosted page, **card only**, and unpaid orders stay open with "Pay now". The store owner did a test purchase in the browser and it worked. Details in "Phase 3: what's done" below.
 - Tests: 31 unit, 28 API e2e (6 new in `test/payments.e2e-spec.ts`), and 7 Playwright passing plus 1 skipped (the manual-payment test skips while card payments are on).
 
@@ -33,7 +33,7 @@ Full original plan: `~/.claude/plans/i-am-planning-to-recursive-shell.md`
 - Tests: 32 unit, 30 API e2e, and 8 Playwright passing plus 1 skipped.
 
 **Next up (store owner to choose):**
-- Deploying (needs a GitHub repo, a host, Stripe live activation and a Resend domain).
+- Deploying (the GitHub repo is ready; still needed: a host, Stripe live activation and a Resend domain).
 - Connecting the supplier once chosen: by email, by hand through their site (a "copy order" view), or by API (e.g. CJ Dropshipping, Printful, BigBuy).
 - Optional: a cost price per product, to show profit.
 
