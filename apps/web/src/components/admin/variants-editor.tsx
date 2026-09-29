@@ -14,6 +14,7 @@ export type VariantRow = {
   compareAt: string;
   options: Record<string, string>;
   isDefault: boolean;
+  inStock: boolean;
 };
 
 export type OptionDef = { name: string; values: string };
@@ -54,6 +55,7 @@ export function generateVariants(options: OptionDef[], current: VariantRow[], sk
       compareAt: "",
       options: opts,
       isDefault: false,
+      inStock: true,
     };
   });
   if (rows.length && !rows.some((r) => r.isDefault)) rows[0] = { ...rows[0], isDefault: true };
@@ -146,6 +148,7 @@ export function VariantsEditor({
               <th className="py-2 pr-2 font-medium">SKU</th>
               <th className="py-2 pr-2 font-medium">Price</th>
               <th className="py-2 pr-2 font-medium">Compare at</th>
+              <th className="py-2 pr-2 font-medium">In stock</th>
               {hasOptions && (
                 <th className="py-2 font-medium">
                   <span className="sr-only">Remove</span>
@@ -195,6 +198,14 @@ export function VariantsEditor({
                     className="w-28"
                   />
                 </td>
+                <td className="py-1.5 pr-2 pt-4">
+                  <input
+                    type="checkbox"
+                    aria-label={`${r.title} is in stock`}
+                    checked={r.inStock}
+                    onChange={(e) => updateRow(i, { inStock: e.target.checked })}
+                  />
+                </td>
                 {hasOptions && (
                   <td className="py-1.5">
                     <Button
@@ -212,6 +223,9 @@ export function VariantsEditor({
           </tbody>
         </table>
       </div>
+      <p className="text-xs text-muted-foreground">
+        Untick &ldquo;In stock&rdquo; when your supplier runs out. Customers can still see the item but can&apos;t buy it.
+      </p>
     </div>
   );
 }

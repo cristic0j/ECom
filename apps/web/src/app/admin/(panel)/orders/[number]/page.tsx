@@ -36,11 +36,16 @@ export default function AdminOrderPage() {
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState("");
   const [pending, setPending] = useState<OrderStatus | null>(null);
+  const [tracking, setTracking] = useState({ trackingNumber: "", trackingUrl: "" });
+  const [trackingSaved, setTrackingSaved] = useState<string | null>(null);
 
   useEffect(() => {
     adminApi
       .getOrder(Number(number))
-      .then(setOrder)
+      .then((o) => {
+        setOrder(o);
+        setTracking({ trackingNumber: o.trackingNumber, trackingUrl: o.trackingUrl });
+      })
       .catch((e) => setError(e.message));
   }, [number]);
 
@@ -63,7 +68,7 @@ export default function AdminOrderPage() {
     setPending(status);
     setError(null);
     try {
-      setOrder(await adminApi.setOrderStatus(order.number, status, note));
+      setOrder(await adminApi.setOrderStatus(order.number, status, note, status === "FULFILLED" ? tracking : undefined));
       setNote("");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Update failed");
@@ -71,6 +76,44 @@ export default function AdminOrderPage() {
       setPending(null);
     }
   };
+
+  const saveTracking = async () => {
+    setPending("FULFILLED");
+    setError(null);
+    setTrackingSaved(null);
+    try {
+      const updated = await adminApi.setOrderTracking(order.number, tracking);
+      const changed = updated.trackingNumber !== order.trackingNumber || updated.trackingUrl !== order.trackingUrl;
+      setOrder(updated);
+      setTrackingSaved(
+        changed ? (tracking.trackingNumber || tracking.trackingUrl ? "Saved. The customer was emailed." : "Tracking removed.") : "No changes.",
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't save tracking");
+    } finally {
+      setPending(null);
+    }
+  };
+
+  const trackingFields = (
+    <>
+      <Field label="Tracking number (optional)" htmlFor="tracking-number">
+        <Input
+          id="tracking-number"
+          value={tracking.trackingNumber}
+          onChange={(e) => setTracking((t) => ({ ...t, trackingNumber: e.target.value }))}
+        />
+      </Field>
+      <Field label="Tracking link (optional)" htmlFor="tracking-url" hint="The carrier's tracking page, starting with https://">
+        <Input
+          id="tracking-url"
+          type="url"
+          value={tracking.trackingUrl}
+          onChange={(e) => setTracking((t) => ({ ...t, trackingUrl: e.target.value }))}
+        />
+      </Field>
+    </>
+  );
 
   return (
     <>
@@ -156,9 +199,10 @@ export default function AdminOrderPage() {
               <p className="text-sm text-muted-foreground">This order is closed; no further changes.</p>
             ) : (
               <>
-                <Field label="Note (optional)" htmlFor="status-note" hint="e.g. payment reference or tracking number">
+                <Field label="Internal note (optional)" htmlFor="status-note" hint="Only visible here, never sent to the customer">
                   <Input id="status-note" value={note} onChange={(e) => setNote(e.target.value)} />
                 </Field>
+                {next.includes("FULFILLED") && trackingFields}
                 <div className="flex flex-col gap-2">
                   {next.map((s) => (
                     <Button
@@ -174,6 +218,21 @@ export default function AdminOrderPage() {
               </>
             )}
           </Card>
+
+          {order.status === "FULFILLED" && (
+            <Card className="space-y-4">
+              <h2 className="font-semibold">Tracking</h2>
+              {trackingFields}
+              <Button onClick={saveTracking} disabled={pending !== null}>
+                {pending === "FULFILLED" ? "Saving…" : "Save tracking"}
+              </Button>
+              {trackingSaved && (
+                <p role="status" className="text-sm text-muted-foreground">
+                  {trackingSaved}
+                </p>
+              )}
+            </Card>
+          )}
 
           {order.payments && order.payments.length > 0 && (
             <Card className="space-y-3 text-sm">

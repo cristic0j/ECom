@@ -13,7 +13,7 @@ The work is split into four phases:
 | 1 | Product catalog + admin panel | ✅ done (2026-09-25) |
 | 2 | Customer accounts, cart, checkout, orders | ✅ done (2026-09-25) |
 | 3 | Payments (Stripe, via a provider interface) | ✅ done (2026-09-29) |
-| 4 | Stock management (per-variant inventory) | ⬜ not started |
+| 4 | Stock management (per-variant inventory) | ⏸ not needed for this store (dropshipping); lighter version done, see below |
 
 Full original plan: `~/.claude/plans/i-am-planning-to-recursive-shell.md`
 
@@ -29,7 +29,13 @@ Full original plan: `~/.claude/plans/i-am-planning-to-recursive-shell.md`
 - **Phase 3: Stripe card payments** built and switched on (`features.payments: true`). The store owner chose: Stripe's hosted page, **card only**, and unpaid orders stay open with "Pay now". The store owner did a test purchase in the browser and it worked. Details in "Phase 3: what's done" below.
 - Tests: 31 unit, 28 API e2e (6 new in `test/payments.e2e-spec.ts`), and 7 Playwright passing plus 1 skipped (the manual-payment test skips while card payments are on).
 
-**Next up (store owner to choose):** Phase 4 (stock), deploying (needs a Stripe account activated for live payments, plus a GitHub repo), or the small "Fulfilled" → "Shipped" admin rename.
+- **Business model: dropshipping.** The store owner keeps no stock; a supplier ships the orders (supplier not chosen yet). So full Phase 4 inventory isn't needed. Built instead (details in "Dropshipping basics" below): an **"In stock" switch per variant**, and **tracking number + link** on shipped orders. The admin now says "Shipped" / "Mark as shipped" (the enum is still FULFILLED).
+- Tests: 32 unit, 30 API e2e, and 8 Playwright passing plus 1 skipped.
+
+**Next up (store owner to choose):**
+- Deploying (needs a GitHub repo, a host, Stripe live activation and a Resend domain).
+- Connecting the supplier once chosen: by email, by hand through their site (a "copy order" view), or by API (e.g. CJ Dropshipping, Printful, BigBuy).
+- Optional: a cost price per product, to show profit.
 
 **Local Stripe testing needs the relay running:** `pnpm stripe:listen` (in a second terminal). Without it, card payments succeed on Stripe but orders stay "Awaiting payment" locally. The Stripe CLI is in git-ignored `.tools/stripe` (v1.52.0, authorized for the store owner's "ECom sandbox"); on another machine, download it again (README → Card payments). The API **refuses to start** with payments on and no `STRIPE_*` keys in `.env`.
 
@@ -286,6 +292,20 @@ Phase 2 is built too; see "Phase 2: what's done" below.
   - A payment that arrives for a cancelled order is flagged but must be refunded in Stripe by hand (CANCELLED → REFUNDED isn't an allowed transition).
   - Partial refunds aren't supported (full refunds only).
   - Unpaid orders are never auto-cancelled (the store owner's choice); stale ones are cancelled by hand.
+
+## Dropshipping basics: what's done (2026-09-29)
+
+- **Stock switch:**
+  - `ProductVariant.inStock` (default true), set with the "In stock" checkbox in the admin variants editor.
+  - Catalog: `VariantDto.inStock`; `ProductSummaryDto.stock` is `in` / `partial` / `out`. Cards show "Sold out"; the admin product list shows "sold out" / "partly out of stock". JSON-LD offers include `availability`.
+  - Product page: out-of-stock options are struck through, and the button becomes a disabled "Out of stock".
+  - Cart: adding an out-of-stock item → 409. A line that goes out of stock while in a cart **stays visible** (`CartItemDto.inStock: false`), is left out of the totals, can only be reduced or removed, and blocks checkout (the cart hides "Check out"; checkout shows an alert; the API returns 409).
+- **Tracking:**
+  - `Order.trackingNumber` / `trackingUrl`, shown to customers on the order page.
+  - Set when marking shipped (`orderStatusUpdateSchema.tracking`, used only with FULFILLED), or later with `PATCH admin/orders/:number/tracking`. A change adds a history entry and emails the customer ("Tracking for order #N"); saving the same details again sends nothing.
+  - The shipped email includes the tracking number, and a "Track your package" button when there's a link. Only http(s) links are accepted.
+  - The admin status note is now labeled "Internal note" (never sent).
+- **Not built (full Phase 4, below):** stock counts, reservations and the movement ledger. Useful only if a store holds its own inventory.
 
 ## Next phases (designed for, not built)
 

@@ -119,7 +119,7 @@ export function newOrderAlertEmail(
   return render(store, `New order #${order.number} from ${order.email}`, [
     {
       p: paid
-        ? `${order.email} placed and paid order #${order.number}. It's ready to fulfil.`
+        ? `${order.email} placed and paid order #${order.number}. It's ready to ship.`
         : `${order.email} placed order #${order.number}. It's waiting for payment.`,
     },
     ...(order.note ? [{ p: `Customer note: ${order.note}` }] : []),
@@ -140,13 +140,30 @@ export function orderStatusEmail(store: EmailStore, order: OrderDto, orderUrl: s
   }[order.status as string];
   if (!message) return null;
   const [subject, body] = message;
+  const shipped = order.status === "FULFILLED";
   return render(store, subject, [
     { p: greeting(order) },
     { p: body },
+    ...(shipped ? trackingBlocks(order) : []),
     { order, locale: store.locale },
-    { button: "View your order", href: orderUrl },
+    shipped && order.trackingUrl
+      ? { button: "Track your package", href: order.trackingUrl }
+      : { button: "View your order", href: orderUrl },
+    ...(shipped && order.trackingUrl ? [{ p: `Your order page: ${orderUrl}` }] : []),
   ]);
 }
+
+/** Sent when tracking is added or changed after the order was marked shipped. */
+export function orderTrackingEmail(store: EmailStore, order: OrderDto, orderUrl: string): RenderedEmail {
+  return render(store, `Tracking for order #${order.number}`, [
+    { p: greeting(order) },
+    { p: "Here are the tracking details for your order." },
+    ...trackingBlocks(order),
+    order.trackingUrl ? { button: "Track your package", href: order.trackingUrl } : { button: "View your order", href: orderUrl },
+  ]);
+}
+
+const trackingBlocks = (order: OrderDto) => (order.trackingNumber ? [{ p: `Tracking number: ${order.trackingNumber}` }] : []);
 
 export function passwordResetEmail(store: EmailStore, resetUrl: string, validMinutes: number): RenderedEmail {
   return render(store, `Reset your ${store.name} password`, [

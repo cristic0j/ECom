@@ -8,7 +8,7 @@ export const productDetailInclude = {
 } satisfies Prisma.ProductInclude;
 
 export const productSummaryInclude = {
-  variants: { orderBy: { priceMinor: "asc" }, take: 1 },
+  variants: { orderBy: { priceMinor: "asc" }, select: { compareAtMinor: true, inStock: true } },
   images: { orderBy: { position: "asc" }, take: 1 },
 } satisfies Prisma.ProductInclude;
 
@@ -31,6 +31,7 @@ function toVariantDto(v: ProductDetail["variants"][number]): VariantDto {
     compareAtMinor: v.compareAtMinor,
     options: asStringRecord(v.options),
     isDefault: v.isDefault,
+    inStock: v.inStock,
   };
 }
 
@@ -52,6 +53,7 @@ export function toProductDto(p: ProductDetail): ProductDto {
 
 export function toProductSummaryDto(p: ProductSummary): ProductSummaryDto {
   const cheapest = p.variants[0];
+  const inStock = p.variants.filter((v) => v.inStock).length;
   return {
     id: p.id,
     slug: p.slug,
@@ -60,6 +62,7 @@ export function toProductSummaryDto(p: ProductSummary): ProductSummaryDto {
     priceMinor: p.priceMinMinor,
     compareAtMinor: cheapest?.compareAtMinor ?? null,
     image: p.images[0] ? toImageDto(p.images[0]) : null,
+    stock: inStock === p.variants.length ? "in" : inStock === 0 ? "out" : "partial",
   };
 }
 

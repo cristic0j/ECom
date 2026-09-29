@@ -26,6 +26,7 @@ import {
   forgotPasswordSchema,
   loginSchema,
   orderStatusUpdateSchema,
+  orderTrackingSchema,
   payOrderSchema,
   resetPasswordSchema,
   type AdminOrderListQuery,
@@ -38,6 +39,7 @@ import {
   type ForgotPasswordInput,
   type LoginInput,
   type OrderStatusUpdateInput,
+  type OrderTrackingInput,
   type PayOrderInput,
   type ResetPasswordInput,
 } from "@ecom/shared";
@@ -270,5 +272,14 @@ export class AdminOrdersController {
     @CurrentAdmin() admin: AdminUserDto,
   ) {
     return this.orders.setStatus(number, body, admin.email);
+  }
+
+  @Patch(":number/tracking")
+  setTracking(
+    @Param("number", ParseIntPipe) number: number,
+    @Body(new ZodValidationPipe(orderTrackingSchema)) body: OrderTrackingInput,
+    @CurrentAdmin() admin: AdminUserDto,
+  ) {
+    return this.orders.setTracking(number, body, admin.email);
   }
 }

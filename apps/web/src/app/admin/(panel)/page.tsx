@@ -32,7 +32,7 @@ export default function DashboardPage() {
 
   const tiles: [string, number | undefined, string][] = [
     ["Awaiting payment", stats?.pending, "/admin/orders?status=PENDING"],
-    ["Paid, to fulfil", stats?.toShip, "/admin/orders?status=PAID"],
+    ["Paid, to ship", stats?.toShip, "/admin/orders?status=PAID"],
     ["Active products", stats?.active, "/admin/products?status=ACTIVE"],
     ["Drafts", stats?.draft, "/admin/products?status=DRAFT"],
     ["Archived", stats?.archived, "/admin/products?status=ARCHIVED"],

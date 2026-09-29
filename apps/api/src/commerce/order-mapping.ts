@@ -60,6 +60,8 @@ export function toOrderDto(o: OrderDetail, { admin }: { admin: boolean }): Order
     shippingMinor: o.shippingMinor,
     shippingAddress: address.success ? address.data : (o.shippingAddress as unknown as Address),
     note: o.note,
+    trackingNumber: o.trackingNumber,
+    trackingUrl: o.trackingUrl,
     items: o.items.map((i) => ({
       id: i.id,
       variantId: i.variantId,

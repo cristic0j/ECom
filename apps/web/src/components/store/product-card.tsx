@@ -19,10 +19,16 @@ export function ProductCard({ product, format }: { product: ProductSummaryDto; f
         ) : (
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">No image</div>
         )}
-        {onSale && (
-          <Badge tone="accent" className="absolute top-2 left-2">
-            Sale
+        {product.stock === "out" ? (
+          <Badge tone="neutral" className="absolute top-2 left-2">
+            Sold out
           </Badge>
+        ) : (
+          onSale && (
+            <Badge tone="accent" className="absolute top-2 left-2">
+              Sale
+            </Badge>
+          )
         )}
       </div>
       <div className="mt-3 space-y-1">

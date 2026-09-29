@@ -46,31 +46,44 @@ export function OrderDetails({ order, format }: { order: OrderDto; format: (mino
         </ul>
         <OrderTotals {...order} format={format} />
       </Card>
-      <Card className="h-fit space-y-2 text-sm">
-        <h2 className="font-semibold">Shipping to</h2>
-        <address className="not-italic text-muted-foreground">
-          {a.name}
-          <br />
-          {a.line1}
-          {a.line2 && (
-            <>
-              <br />
-              {a.line2}
-            </>
-          )}
-          <br />
-          {a.postalCode} {a.city}
-          <br />
-          {a.country}
-          {a.phone && (
-            <>
-              <br />
-              {a.phone}
-            </>
-          )}
-        </address>
-        <p className="pt-2 text-muted-foreground">Contact: {order.email}</p>
-      </Card>
+      <div className="space-y-6">
+        {(order.trackingNumber || order.trackingUrl) && (
+          <Card className="space-y-2 text-sm" data-testid="order-tracking">
+            <h2 className="font-semibold">Tracking</h2>
+            {order.trackingNumber && <p className="tabular-nums">{order.trackingNumber}</p>}
+            {order.trackingUrl && (
+              <a href={order.trackingUrl} target="_blank" rel="noopener noreferrer" className="font-medium underline">
+                Track your package
+              </a>
+            )}
+          </Card>
+        )}
+        <Card className="h-fit space-y-2 text-sm">
+          <h2 className="font-semibold">Shipping to</h2>
+          <address className="not-italic text-muted-foreground">
+            {a.name}
+            <br />
+            {a.line1}
+            {a.line2 && (
+              <>
+                <br />
+                {a.line2}
+              </>
+            )}
+            <br />
+            {a.postalCode} {a.city}
+            <br />
+            {a.country}
+            {a.phone && (
+              <>
+                <br />
+                {a.phone}
+              </>
+            )}
+          </address>
+          <p className="pt-2 text-muted-foreground">Contact: {order.email}</p>
+        </Card>
+      </div>
     </div>
   );
 }

@@ -64,6 +64,11 @@ export function CartView() {
                     {item.productTitle}
                   </Link>
                   {item.variantTitle !== "Default" && <p className="text-sm text-muted-foreground">{item.variantTitle}</p>}
+                  {!item.inStock && (
+                    <p className="text-sm font-medium text-red-600" data-testid="line-out-of-stock">
+                      Out of stock. Remove it to check out.
+                    </p>
+                  )}
                   <p className="text-sm text-muted-foreground tabular-nums">{format(item.unitPriceMinor)} each</p>
                 </div>
                 <div className="flex items-center gap-4">
@@ -84,13 +89,15 @@ export function CartView() {
                       variant="ghost"
                       size="sm"
                       aria-label={`Increase quantity of ${item.productTitle}`}
-                      disabled={busy === item.id || item.quantity >= MAX_QUANTITY}
+                      disabled={busy === item.id || item.quantity >= MAX_QUANTITY || !item.inStock}
                       onClick={() => change(item, item.quantity + 1)}
                     >
                       <Plus className="size-4" />
                     </Button>
                   </div>
-                  <span className="w-24 text-right font-medium tabular-nums">{format(item.lineTotalMinor)}</span>
+                  <span className={cn("w-24 text-right font-medium tabular-nums", !item.inStock && "text-muted-foreground line-through")}>
+                    {format(item.lineTotalMinor)}
+                  </span>
                   <Button
                     variant="ghost"
                     size="sm"
@@ -113,9 +120,13 @@ export function CartView() {
         {toFreeShipping !== null && toFreeShipping > 0 && (
           <p className="text-sm text-muted-foreground">Add {format(toFreeShipping)} more for free shipping.</p>
         )}
-        <Link href="/checkout" className={cn(buttonClass("primary", "lg"), "w-full")}>
-          Check out
-        </Link>
+        {cart.items.some((i) => !i.inStock) ? (
+          <p className="text-sm text-muted-foreground">Remove the out-of-stock items to check out.</p>
+        ) : (
+          <Link href="/checkout" className={cn(buttonClass("primary", "lg"), "w-full")}>
+            Check out
+          </Link>
+        )}
       </Card>
     </div>
   );

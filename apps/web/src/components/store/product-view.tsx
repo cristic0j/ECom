@@ -46,6 +46,11 @@ export function ProductView({ product, currency, locale }: { product: ProductDto
 
   const isAvailable = (name: string, value: string) =>
     product.variants.some((v) => matches(v, { ...selected, [name]: value }));
+  // The combination exists but the supplier has run out of it
+  const isSoldOut = (name: string, value: string) => {
+    const v = product.variants.find((x) => matches(x, { ...selected, [name]: value }));
+    return v !== undefined && !v.inStock;
+  };
 
   const image = product.images[activeImage] ?? product.images[0];
   const onSale = variant?.compareAtMinor != null && variant.compareAtMinor > variant.priceMinor;
@@ -124,9 +129,11 @@ export function ProductView({ product, currency, locale }: { product: ProductDto
                       "min-w-12 rounded-(--radius) border px-4 py-2 text-sm transition",
                       active ? "border-primary bg-primary text-primary-foreground" : "border-border hover:border-primary",
                       !isAvailable(name, value) && !active && "opacity-40",
+                      isSoldOut(name, value) && "line-through decoration-1",
                     )}
                   >
                     {value}
+                    {isSoldOut(name, value) && <span className="sr-only"> (out of stock)</span>}
                   </button>
                 );
               })}
@@ -134,7 +141,7 @@ export function ProductView({ product, currency, locale }: { product: ProductDto
           </fieldset>
         ))}
 
-        <AddToCart variantId={variant?.id} />
+        <AddToCart variantId={variant?.id} inStock={variant?.inStock ?? false} />
 
         {variant && <p className="text-xs text-muted-foreground">SKU: {variant.sku}</p>}
 

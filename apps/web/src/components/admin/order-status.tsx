@@ -3,7 +3,7 @@ import type { OrderStatus } from "@ecom/shared";
 export const ADMIN_ORDER_STATUS_LABEL: Record<OrderStatus, string> = {
   PENDING: "Pending payment",
   PAID: "Paid",
-  FULFILLED: "Fulfilled",
+  FULFILLED: "Shipped",
   CANCELLED: "Cancelled",
   REFUNDED: "Refunded",
 };
@@ -20,7 +20,7 @@ export const ADMIN_ORDER_STATUS_TONE = {
 export const STATUS_ACTION: Record<OrderStatus, string> = {
   PENDING: "Mark pending",
   PAID: "Mark as paid",
-  FULFILLED: "Mark as fulfilled",
+  FULFILLED: "Mark as shipped",
   CANCELLED: "Cancel order",
   REFUNDED: "Mark as refunded",
 };

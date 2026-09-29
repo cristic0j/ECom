@@ -76,6 +76,8 @@ model ProductVariant {
   /// Option values, e.g. { "size": "M", "color": "Red" }
   options        Json           @default("{}")
   isDefault      Boolean        @default(false)
+  /// Can be bought right now. Switched off by hand when the supplier runs out.
+  inStock        Boolean        @default(true)
   position       Int            @default(0)
   images         ProductImage[]
   cartItems      CartItem[]
@@ -172,6 +174,9 @@ model Order {
   /// Snapshot of the address at purchase time
   shippingAddress Json
   note            String      @default("")
+  /// Shipment tracking, set when the order ships (shown to the customer)
+  trackingNumber  String      @default("")
+  trackingUrl     String      @default("")
   items           OrderItem[]
   events          OrderEvent[]
   payments        Payment[]

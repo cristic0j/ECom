@@ -43,7 +43,10 @@ const toRows = (p?: ProductDto): VariantRow[] =>
     compareAt: minorToInput(v.compareAtMinor),
     options: v.options,
     isDefault: v.isDefault,
-  })) ?? [{ key: newRowKey(), sku: "", title: "Default", price: "", compareAt: "", options: {}, isDefault: true }];
+    inStock: v.inStock,
+  })) ?? [
+    { key: newRowKey(), sku: "", title: "Default", price: "", compareAt: "", options: {}, isDefault: true, inStock: true },
+  ];
 
 export function ProductEditor({ product }: { product?: ProductDto }) {
   const router = useRouter();
@@ -100,7 +103,7 @@ export function ProductEditor({ product }: { product?: ProductDto }) {
       if (!r.sku.trim()) vErrs[i] = "SKU is required";
       else if (Number.isNaN(priceMinor)) vErrs[i] = "Enter a valid price, e.g. 19.99";
       else if (compareAtMinor !== null && Number.isNaN(compareAtMinor)) vErrs[i] = "Invalid compare-at price";
-      return { id: r.id, sku: r.sku.trim(), title: r.title || "Default", priceMinor, compareAtMinor, options: r.options, isDefault: r.isDefault };
+      return { id: r.id, sku: r.sku.trim(), title: r.title || "Default", priceMinor, compareAtMinor, options: r.options, isDefault: r.isDefault, inStock: r.inStock };
     });
 
     const attrs: Record<string, string> = {};

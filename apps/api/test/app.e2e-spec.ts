@@ -406,9 +406,17 @@ describe("API (e2e)", () => {
       expect(paid).toMatchObject({ to: ["guest@b.dev"], subject: `Payment received for order #${guestOrder.number}` });
       // The admin's note is internal and isn't sent to the customer
       expect(paid.text).not.toContain("Bank transfer");
-      const order = (await http().patch(path).set("Cookie", editorCookie).send({ status: "FULFILLED" }).expect(200)).body;
-      expect((await sent()).map((m) => m.subject)).toEqual([`Order #${guestOrder.number} has shipped`]);
-      expect(order.status).toBe("FULFILLED");
+      const tracking = { trackingNumber: "JD014600003", trackingUrl: "https://track.test/JD014600003" };
+      await http().patch(`/api/admin/orders/${guestOrder.number}/tracking`).set("Cookie", adminCookie).send(tracking).expect(409); // not shipped yet
+      const order = (
+        await http().patch(path).set("Cookie", editorCookie).send({ status: "FULFILLED", tracking }).expect(200)
+      ).body;
+      const [shipped, ...more] = await sent();
+      expect(more).toHaveLength(0);
+      expect(shipped.subject).toBe(`Order #${guestOrder.number} has shipped`);
+      expect(shipped.text).toContain("Tracking number: JD014600003");
+      expect(shipped.text).toContain("Track your package: https://track.test/JD014600003");
+      expect(order).toMatchObject({ status: "FULFILLED", ...tracking });
       expect(order.events).toMatchObject([
         { toStatus: "PENDING", actor: "guest" },
         { fromStatus: "PENDING", toStatus: "PAID", actor: "admin@test.dev", note: "Bank transfer" },
@@ -417,6 +425,62 @@ describe("API (e2e)", () => {
 
       const counts = (await http().get("/api/admin/orders/counts").set("Cookie", adminCookie).expect(200)).body;
       expect(counts).toEqual({ FULFILLED: 1, PENDING: 1 });
+    });
+
+    it("lets admins correct tracking after shipping and tells the customer", async () => {
+      const path = `/api/admin/orders/${guestOrder.number}/tracking`;
+      await http().patch(path).set("Cookie", adminCookie).send({ trackingUrl: "javascript:alert(1)" }).expect(400);
+      await sent();
+
+      const fixed = { trackingNumber: "JD014600099", trackingUrl: "" };
+      const order = (await http().patch(path).set("Cookie", adminCookie).send(fixed).expect(200)).body;
+      expect(order).toMatchObject(fixed);
+      expect(order.events.at(-1)).toMatchObject({ actor: "admin@test.dev", note: "Tracking set to JD014600099" });
+      const [mail] = await sent();
+      expect(mail).toMatchObject({ to: ["guest@b.dev"], subject: `Tracking for order #${guestOrder.number}` });
+      expect(mail.text).toContain("Tracking number: JD014600099");
+
+      // Saving the same details again doesn't email anyone
+      await http().patch(path).set("Cookie", adminCookie).send(fixed).expect(200);
+      expect(await sent()).toHaveLength(0);
+
+      // The customer sees it on their order page
+      const mine = (await http().get(`/api/orders/${guestOrder.number}?token=${guestOrder.accessToken}`).expect(200)).body;
+      expect(mine.trackingNumber).toBe("JD014600099");
+    });
+
+    it("keeps out-of-stock items from being bought", async () => {
+      const guest = request.agent(app.getHttpServer());
+      await guest.post("/api/cart/items").send({ variantId: product.variants[0].id }).expect(201);
+      await guest.post("/api/cart/items").send({ variantId: product.variants[1].id }).expect(201);
+
+      // The supplier runs out of variant A
+      const body = shopBody(2500);
+      const outOfStock = { ...body, variants: body.variants.map((v, i) => (i === 0 ? { ...v, inStock: false } : v)) };
+      await http().put(`/api/admin/products/${product.id}`).set("Cookie", adminCookie).send(outOfStock).expect(200);
+
+      const detail = (await http().get("/api/catalog/products/e2e-shop").expect(200)).body;
+      expect(detail.variants.map((v: { sku: string; inStock: boolean }) => [v.sku, v.inStock])).toEqual([
+        ["SHOP-A", false],
+        ["SHOP-B", true],
+      ]);
+      const listed = (await http().get("/api/catalog/products?q=Shop%20Tee").expect(200)).body.items;
+      expect(listed[0].stock).toBe("partial");
+
+      await http().post("/api/cart/items").send({ variantId: product.variants[0].id }).expect(409);
+      // Already in a cart: stays visible, isn't counted, and blocks checkout until removed
+      const cart = (await guest.get("/api/cart").expect(200)).body;
+      const lineA = cart.items.find((i: { sku: string }) => i.sku === "SHOP-A");
+      expect(lineA.inStock).toBe(false);
+      expect(cart.subtotalMinor).toBe(1500);
+      await guest.patch(`/api/cart/items/${lineA.id}`).send({ quantity: 2 }).expect(409);
+      const blocked = await guest.post("/api/checkout").send({ email: "a@b.dev", shippingAddress: address }).expect(409);
+      expect(blocked.body.message).toContain("Shop Tee");
+      await guest.delete(`/api/cart/items/${lineA.id}`).expect(200);
+      await guest.post("/api/checkout").send({ email: "a@b.dev", shippingAddress: address }).expect(201);
+
+      await http().put(`/api/admin/products/${product.id}`).set("Cookie", adminCookie).send(shopBody(2500)).expect(200);
+      expect((await http().get("/api/catalog/products?q=Shop%20Tee").expect(200)).body.items[0].stock).toBe("in");
     });
 
     it("resets a customer password with a single-use emailed link", async () => {

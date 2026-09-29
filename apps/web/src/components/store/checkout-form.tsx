@@ -78,6 +78,8 @@ export function CheckoutForm({
     );
   }
 
+  const outOfStock = cart.items.filter((i) => !i.inStock);
+
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setFormError(null);
@@ -114,6 +116,15 @@ export function CheckoutForm({
     <form onSubmit={onSubmit} noValidate className="grid gap-8 lg:grid-cols-[1fr_360px]">
       <div className="space-y-6">
         <h1 className="text-2xl font-bold">Checkout</h1>
+        {outOfStock.length > 0 && (
+          <Alert>
+            {outOfStock.map((i) => i.productTitle).join(", ")} {outOfStock.length === 1 ? "is" : "are"} out of stock.{" "}
+            <Link href="/cart" className="underline">
+              Remove {outOfStock.length === 1 ? "it" : "them"} from your cart
+            </Link>{" "}
+            to continue.
+          </Alert>
+        )}
         {formError && <Alert>{formError}</Alert>}
 
         <Card className="space-y-4">
@@ -182,7 +193,7 @@ export function CheckoutForm({
             </div>
           )
         )}
-        <Button type="submit" size="lg" className="w-full" disabled={placing}>
+        <Button type="submit" size="lg" className="w-full" disabled={placing || outOfStock.length > 0}>
           {cardPayments
             ? placing
               ? "Opening payment page…"

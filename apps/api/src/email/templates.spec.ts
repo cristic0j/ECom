@@ -5,6 +5,7 @@ import {
   orderConfirmedEmail,
   orderReceivedEmail,
   orderStatusEmail,
+  orderTrackingEmail,
   passwordResetEmail,
 } from "./templates";
 
@@ -32,6 +33,8 @@ const order = (overrides: Partial<OrderDto> = {}): OrderDto => ({
     phone: "",
   },
   note: "",
+  trackingNumber: "",
+  trackingUrl: "",
   items: [
     {
       id: "i1",
@@ -89,7 +92,21 @@ describe("email templates", () => {
     expect(email.subject).toBe("New order #1001 from ada@example.com");
     expect(email.text).toContain("Customer note: Leave at the door");
     expect(email.text).toContain("waiting for payment");
-    expect(newOrderAlertEmail(store, order(), "https://x", { paid: true }).text).toContain("ready to fulfil");
+    expect(newOrderAlertEmail(store, order(), "https://x", { paid: true }).text).toContain("ready to ship");
+  });
+
+  it("puts the tracking number and link in the shipped email", () => {
+    const shipped = order({ status: "FULFILLED", trackingNumber: "JD014600003", trackingUrl: "https://track.test/JD014600003" });
+    const email = orderStatusEmail(store, shipped, "https://shop.test/order/1001?token=abc")!;
+    expect(email.text).toContain("Tracking number: JD014600003");
+    expect(email.text).toContain("Track your package: https://track.test/JD014600003");
+    expect(email.text).toContain("https://shop.test/order/1001?token=abc");
+    // Without tracking it links to the order page as before
+    expect(orderStatusEmail(store, order({ status: "FULFILLED" }), "https://x")!.text).not.toContain("Tracking");
+
+    const later = orderTrackingEmail(store, { ...shipped, trackingUrl: "" }, "https://x");
+    expect(later.subject).toBe("Tracking for order #1001");
+    expect(later.text).toContain("Tracking number: JD014600003");
   });
 
   it("only emails the customer for statuses they care about", () => {

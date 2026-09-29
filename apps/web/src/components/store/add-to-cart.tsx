@@ -15,7 +15,7 @@ const MAX_QUANTITY = 99;
  * "Add to cart" until the selected variant is in the cart, then a − / + quantity stepper
  * (− at 1 removes the line). Renders nothing when the cart feature is off.
  */
-export function AddToCart({ variantId }: { variantId: string | undefined }) {
+export function AddToCart({ variantId, inStock }: { variantId: string | undefined; inStock: boolean }) {
   const shop = useOptionalShop();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -37,6 +37,19 @@ export function AddToCart({ variantId }: { variantId: string | undefined }) {
       setPending(false);
     }
   };
+
+  if (variantId && !inStock) {
+    return (
+      <div className="space-y-3">
+        <Button size="lg" className="w-full sm:w-auto" disabled>
+          Out of stock
+        </Button>
+        <p className="text-sm text-muted-foreground">
+          {line ? "This is in your cart, but it's out of stock right now. Remove it from your cart to check out." : "This option is out of stock right now."}
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-3">

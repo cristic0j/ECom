@@ -213,7 +213,7 @@ test("guest buys a product and the admin marks the order paid", async ({ page })
   await page.getByRole("button", { name: "Mark as paid" }).click();
   await expect(page.getByTestId("admin-order-status")).toHaveText("Paid");
   await expect(page.getByText("“Bank transfer received”")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Mark as fulfilled" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Mark as shipped" })).toBeVisible();
 });
 
 test("guest pays by card and the order is marked paid by the Stripe webhook", async ({ page }) => {
@@ -254,6 +254,43 @@ test("guest pays by card and the order is marked paid by the Stripe webhook", as
   await expect(page.getByTestId("admin-payment")).toContainText("Paid");
   await expect(page.getByText("by payment provider")).toBeVisible();
   await expect(page.getByRole("button", { name: /^Refund .* to the customer$/ })).toBeVisible();
+
+  // Ship it with tracking; the customer sees it on their order page
+  await page.getByLabel("Tracking number (optional)").fill("JD014600003");
+  await page.getByLabel("Tracking link (optional)").fill("https://track.example.com/JD014600003");
+  await page.getByRole("button", { name: "Mark as shipped" }).click();
+  await expect(page.getByTestId("admin-order-status")).toHaveText("Shipped");
+  await page.goto(`/order/${number}?token=${encodeURIComponent(accessToken)}`);
+  await expect(page.getByTestId("order-status")).toHaveText("Shipped");
+  await expect(page.getByTestId("order-tracking")).toContainText("JD014600003");
+  await expect(page.getByRole("link", { name: "Track your package" })).toHaveAttribute(
+    "href",
+    "https://track.example.com/JD014600003",
+  );
+});
+
+test("out-of-stock items show as sold out and can't be added to the cart", async ({ page }) => {
+  await login(page);
+  const slug = `e2e-sold-out-${Date.now().toString(36)}`;
+  const created = await page.request.post("/api/admin/products", {
+    data: {
+      slug,
+      title: "Sold Out Scarf",
+      status: "ACTIVE",
+      variants: [{ sku: slug.toUpperCase(), title: "Default", priceMinor: 1500, inStock: false }],
+    },
+  });
+  expect(created.status()).toBe(201);
+  const { id } = await created.json();
+  try {
+    await page.goto(`/search?q=${encodeURIComponent("Sold Out Scarf")}`);
+    await expect(page.getByTestId("product-card").filter({ hasText: "Sold Out Scarf" })).toContainText("Sold out");
+    await page.goto(`/p/${slug}`);
+    await expect(page.getByRole("button", { name: "Out of stock" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Add to cart" })).toHaveCount(0);
+  } finally {
+    await page.request.delete(`/api/admin/products/${id}`);
+  }
 });
 
 test("a shopper's guest cart carries over when they create an account", async ({ page }) => {

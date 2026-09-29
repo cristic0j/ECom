@@ -146,6 +146,11 @@ function ProductsTable() {
                 </td>
                 <td className="p-3">
                   <Badge tone={STATUS_TONE[p.status]}>{p.status.toLowerCase()}</Badge>
+                  {p.stock !== "in" && (
+                    <Badge tone="warning" className="ml-2">
+                      {p.stock === "out" ? "sold out" : "partly out of stock"}
+                    </Badge>
+                  )}
                 </td>
                 <td className="p-3 text-right tabular-nums">{format(p.priceMinor)}</td>
                 <td className="p-3 text-right">

@@ -8,6 +8,7 @@ import type {
   CategoryInput,
   OrderDto,
   OrderStatus,
+  OrderTrackingInput,
   OrderSummaryDto,
   Paginated,
   ProductDto,
@@ -43,8 +44,10 @@ export const adminApi = {
   listOrders: (q: Partial<AdminOrderListQuery>) => request<Paginated<OrderSummaryDto>>(`/admin/orders${toQuery(q)}`),
   orderCounts: () => request<Partial<Record<OrderStatus, number>>>("/admin/orders/counts"),
   getOrder: (number: number) => request<OrderDto>(`/admin/orders/${number}`),
-  setOrderStatus: (number: number, status: OrderStatus, note = "") =>
-    request<OrderDto>(`/admin/orders/${number}/status`, json("PATCH", { status, note })),
+  setOrderStatus: (number: number, status: OrderStatus, note = "", tracking?: OrderTrackingInput) =>
+    request<OrderDto>(`/admin/orders/${number}/status`, json("PATCH", { status, note, tracking })),
+  setOrderTracking: (number: number, tracking: OrderTrackingInput) =>
+    request<OrderDto>(`/admin/orders/${number}/tracking`, json("PATCH", tracking)),
 
   getSettings: () => request<StoreSettings>("/settings"),
   updateSettings: (patch: StoreSettings) => request<StoreSettings>("/admin/settings", json("PUT", patch)),

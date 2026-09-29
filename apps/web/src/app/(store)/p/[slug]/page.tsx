@@ -43,6 +43,7 @@ export default async function ProductPage({ params }: PageProps<"/p/[slug]">) {
       sku: v.sku,
       price: (v.priceMinor / 100).toFixed(2),
       priceCurrency: store.currency,
+      availability: v.inStock ? "https://schema.org/InStock" : "https://schema.org/OutOfStock",
     })),
   };
 

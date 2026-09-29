@@ -22,6 +22,7 @@ export const variantInputSchema = z.object({
   compareAtMinor: z.number().int().nonnegative().nullable().optional(),
   options: z.record(z.string()).default({}),
   isDefault: z.boolean().default(false),
+  inStock: z.boolean().default(true),
 });
 export type VariantInput = z.infer<typeof variantInputSchema>;
 
@@ -156,9 +157,23 @@ export type CheckoutInput = z.infer<typeof checkoutSchema>;
 export const orderStatusSchema = z.enum(["PENDING", "PAID", "FULFILLED", "CANCELLED", "REFUNDED"]);
 export type OrderStatus = z.infer<typeof orderStatusSchema>;
 
+/** Shipment tracking. The link goes into emails, so only http(s) URLs are accepted. */
+export const orderTrackingSchema = z.object({
+  trackingNumber: z.string().trim().max(100).default(""),
+  trackingUrl: z
+    .string()
+    .trim()
+    .max(500)
+    .refine((u) => u === "" || /^https?:\/\/[^\s]+$/i.test(u), "Use a full link starting with https://")
+    .default(""),
+});
+export type OrderTrackingInput = z.infer<typeof orderTrackingSchema>;
+
 export const orderStatusUpdateSchema = z.object({
   status: orderStatusSchema,
   note: z.string().trim().max(1000).default(""),
+  /** Only used when marking an order shipped (FULFILLED) */
+  tracking: orderTrackingSchema.optional(),
 });
 export type OrderStatusUpdateInput = z.infer<typeof orderStatusUpdateSchema>;
 

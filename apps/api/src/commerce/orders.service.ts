@@ -9,6 +9,7 @@ import {
   type CustomerDto,
   type OrderDto,
   type OrderStatusUpdateInput,
+  type OrderTrackingInput,
   type OrderSummaryDto,
   type Paginated,
 } from "@ecom/shared";
@@ -47,10 +48,10 @@ export class OrdersService {
       const cart = await this.carts.find(owner, tx);
       if (!cart?.items.length) throw new BadRequestException("Your cart is empty");
 
-      const unavailable = cart.items.filter((l) => !isAvailable(l));
+      const unavailable = cart.items.filter((l) => !isAvailable(l) || !l.variant.inStock);
       if (unavailable.length) {
         const names = unavailable.map((l) => l.variant.product.title).join(", ");
-        throw new ConflictException(`No longer available: ${names}. Remove it from your cart to continue.`);
+        throw new ConflictException(`Out of stock or no longer available: ${names}. Remove it from your cart to continue.`);
       }
 
       const lines = cart.items.map((l) => ({
@@ -160,7 +161,7 @@ export class OrdersService {
    * cancelling closes the order's open payment pages first, and refunding sends the money back
    * through the provider first, so a failure there leaves the order unchanged.
    */
-  async setStatus(number: number, { status, note }: OrderStatusUpdateInput, actor: string): Promise<OrderDto> {
+  async setStatus(number: number, { status, note, tracking }: OrderStatusUpdateInput, actor: string): Promise<OrderDto> {
     const order = await this.prisma.order.findUnique({ where: { number }, select: { id: true, status: true } });
     if (!order) throw new NotFoundException("Order not found");
     // Checked up front too, so nothing is refunded or closed for a change that isn't allowed
@@ -171,11 +172,42 @@ export class OrdersService {
 
     await this.prisma.$transaction(async (tx) => {
       await transitionOrder(tx, order, status, actor, note);
+      if (status === "FULFILLED" && tracking) await tx.order.update({ where: { id: order.id }, data: tracking });
       if (refundedPaymentId) await tx.payment.update({ where: { id: refundedPaymentId }, data: { status: "REFUNDED" } });
     });
     const updated = await this.prisma.order.findUniqueOrThrow({ where: { number }, include: orderDetailInclude });
     // The admin note stays internal; the customer email only says what changed
     this.email.orderStatusChanged(toOrderDto(updated, { admin: false }), updated.accessToken);
+    return toOrderDto(updated, { admin: true });
+  }
+
+  /**
+   * Adds or corrects the tracking details of a shipped order (e.g. when the supplier sends the
+   * number after the order was marked shipped). The customer is emailed when there's something new.
+   */
+  async setTracking(number: number, tracking: OrderTrackingInput, actor: string): Promise<OrderDto> {
+    const order = await this.prisma.order.findUnique({ where: { number }, select: { id: true, status: true, trackingNumber: true, trackingUrl: true } });
+    if (!order) throw new NotFoundException("Order not found");
+    if (order.status !== "FULFILLED") throw new ConflictException("Tracking can only be added to a shipped order");
+    const changed = tracking.trackingNumber !== order.trackingNumber || tracking.trackingUrl !== order.trackingUrl;
+    if (changed) {
+      await this.prisma.$transaction([
+        this.prisma.order.update({ where: { id: order.id }, data: tracking }),
+        this.prisma.orderEvent.create({
+          data: {
+            orderId: order.id,
+            fromStatus: order.status,
+            toStatus: order.status,
+            actor,
+            note: tracking.trackingNumber ? `Tracking set to ${tracking.trackingNumber}` : "Tracking removed",
+          },
+        }),
+      ]);
+    }
+    const updated = await this.prisma.order.findUniqueOrThrow({ where: { number }, include: orderDetailInclude });
+    if (changed && (tracking.trackingNumber || tracking.trackingUrl)) {
+      this.email.trackingUpdated(toOrderDto(updated, { admin: false }), updated.accessToken);
+    }
     return toOrderDto(updated, { admin: true });
   }
 

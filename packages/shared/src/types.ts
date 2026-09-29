@@ -20,6 +20,7 @@ export interface VariantDto {
   compareAtMinor: number | null;
   options: Record<string, string>;
   isDefault: boolean;
+  inStock: boolean;
 }
 
 export interface ImageDto {
@@ -37,6 +38,8 @@ export interface ProductSummaryDto {
   priceMinor: number;
   compareAtMinor: number | null;
   image: ImageDto | null;
+  /** "out" when no variant can be bought, "partial" when some can't */
+  stock: "in" | "partial" | "out";
 }
 
 export interface ProductDto {
@@ -95,6 +98,8 @@ export interface CartItemDto {
   unitPriceMinor: number;
   lineTotalMinor: number;
   image: ImageDto | null;
+  /** Out-of-stock lines stay in the cart but aren't counted in the totals and block checkout */
+  inStock: boolean;
 }
 
 export interface CartDto {
@@ -145,6 +150,8 @@ export interface OrderDto extends OrderSummaryDto {
   shippingMinor: number;
   shippingAddress: Address;
   note: string;
+  trackingNumber: string;
+  trackingUrl: string;
   items: OrderItemDto[];
   /** Admin views only */
   events?: OrderEventDto[];

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import { randomBytes } from "node:crypto";
 import type { Prisma } from "@ecom/db";
 import { computeTotals, type CartAddInput, type CartDto, type CartItemDto } from "@ecom/shared";
@@ -55,9 +55,10 @@ export class CartService {
   async add(owner: CartOwner, { variantId, quantity }: CartAddInput): Promise<{ cart: CartDto; token?: string }> {
     const variant = await this.prisma.productVariant.findUnique({
       where: { id: variantId },
-      select: { product: { select: { status: true } } },
+      select: { inStock: true, product: { select: { status: true } } },
     });
     if (!variant || variant.product.status !== "ACTIVE") throw new NotFoundException("This product is not available");
+    if (!variant.inStock) throw new ConflictException("Sorry, this item is out of stock");
 
     const { cartId, token } = await this.getOrCreateId(owner);
     const existing = await this.prisma.cartItem.findUnique({ where: { cartId_variantId: { cartId, variantId } } });
@@ -76,6 +77,8 @@ export class CartService {
     const cart = await this.find(owner);
     const line = cart?.items.find((l) => l.id === itemId);
     if (!cart || !line) throw new NotFoundException("Cart item not found");
+    // An out-of-stock line can be reduced or removed, not increased
+    if (!line.variant.inStock && quantity > line.quantity) throw new ConflictException("Sorry, this item is out of stock");
     if (quantity === 0) await this.prisma.cartItem.delete({ where: { id: itemId } });
     else await this.prisma.cartItem.update({ where: { id: itemId }, data: { quantity } });
     await this.touch(cart.id);
@@ -147,7 +150,10 @@ export class CartService {
     return {
       items,
       itemCount: items.reduce((n, i) => n + i.quantity, 0),
-      ...computeTotals(items, shipping),
+      ...computeTotals(
+        items.filter((i) => i.inStock),
+        shipping,
+      ),
       currency,
       freeShippingOverMinor: shipping.freeOverMinor,
     };
@@ -169,5 +175,6 @@ function toCartItemDto(line: CartLine): CartItemDto {
     unitPriceMinor: variant.priceMinor,
     lineTotalMinor: variant.priceMinor * line.quantity,
     image: image ? { id: image.id, url: image.url, alt: image.alt, variantId: image.variantId } : null,
+    inStock: variant.inStock,
   };
 }

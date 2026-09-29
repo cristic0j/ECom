@@ -163,7 +163,7 @@ describe("Card payments (e2e)", () => {
     ]);
     expect(mails[0].text).toContain("Total  €45.00");
     expect(mails[0].text).not.toContain("IBAN");
-    expect(mails[1].text).toContain("ready to fulfil");
+    expect(mails[1].text).toContain("ready to ship");
 
     // Stripe retries deliveries: the same event is acknowledged but not applied twice
     await webhook(paidOutcome(ref, 4500), "evt_paid").expect(200);

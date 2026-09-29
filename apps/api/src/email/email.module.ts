@@ -10,6 +10,7 @@ import {
   orderConfirmedEmail,
   orderReceivedEmail,
   orderStatusEmail,
+  orderTrackingEmail,
   passwordResetEmail,
   type EmailStore,
   type RenderedEmail,
@@ -60,6 +61,13 @@ export class EmailService {
     this.queue(async () => {
       const email = orderStatusEmail(await this.store(), order, orderUrl(order, accessToken));
       if (email) await this.deliver([order.email], email);
+    });
+  }
+
+  /** Tracking added or changed after the order was marked shipped. */
+  trackingUpdated(order: OrderDto, accessToken: string): void {
+    this.queue(async () => {
+      await this.deliver([order.email], orderTrackingEmail(await this.store(), order, orderUrl(order, accessToken)));
     });
   }
 
