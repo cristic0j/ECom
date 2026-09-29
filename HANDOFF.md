@@ -37,6 +37,8 @@ Full original plan: `~/.claude/plans/i-am-planning-to-recursive-shell.md`
 - Connecting the supplier once chosen: by email, by hand through their site (a "copy order" view), or by API (e.g. CJ Dropshipping, Printful, BigBuy).
 - Optional: a cost price per product, to show profit.
 
+**State at the end of the session:** everything is committed (latest: handoff update `b08ef19`, which the store owner was about to push from GitHub Desktop). The Stripe relay was stopped. `pnpm dev` may still be running in the store owner's terminal.
+
 **Local Stripe testing needs the relay running:** `pnpm stripe:listen` (in a second terminal). Without it, card payments succeed on Stripe but orders stay "Awaiting payment" locally. The Stripe CLI is in git-ignored `.tools/stripe` (v1.52.0, authorized for the store owner's "ECom sandbox"); on another machine, download it again (README → Card payments). The API **refuses to start** with payments on and no `STRIPE_*` keys in `.env`.
 
 ## Previous session (2026-09-27)
