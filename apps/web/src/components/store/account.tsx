@@ -15,6 +15,7 @@ import { Field, Input } from "@/components/ui/form";
 import { Alert, Badge, Card } from "@/components/ui/misc";
 import { useShop } from "./shop-provider";
 import { OrderDetails, ORDER_STATUS_LABEL, ORDER_STATUS_TONE } from "./order-details";
+import { PayNow } from "./pay-now";
 
 /** Only same-site paths, so ?next= can't send people to another domain. */
 export function safeNext(next: string | undefined, fallback = "/account"): string {
@@ -294,7 +295,7 @@ export function AccountHome() {
   );
 }
 
-export function AccountOrder({ number }: { number: number }) {
+export function AccountOrder({ number, cardPayments }: { number: number; cardPayments: boolean }) {
   const customer = useRequireCustomer(`/account/orders/${number}`);
   const { format } = useShop();
   const [order, setOrder] = useState<OrderDto | null>(null);
@@ -316,6 +317,12 @@ export function AccountOrder({ number }: { number: number }) {
         <h1 className="mt-2 text-2xl font-bold">Order #{order.number}</h1>
         <p className="text-muted-foreground">Placed {new Date(order.createdAt).toLocaleString()}</p>
       </div>
+      {cardPayments && order.status === "PENDING" && (
+        <div className="space-y-3">
+          <p className="max-w-prose text-sm">This order isn&apos;t paid yet.</p>
+          <PayNow number={order.number} />
+        </div>
+      )}
       <OrderDetails order={order} format={(m) => format(m, order.currency)} />
       <Link href="/" className={buttonClass("secondary")}>
         Continue shopping

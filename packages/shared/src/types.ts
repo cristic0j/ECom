@@ -1,4 +1,4 @@
-import type { Address, OrderStatus } from "./schemas";
+import type { Address, OrderStatus, PaymentStatus } from "./schemas";
 
 export type ProductStatus = "DRAFT" | "ACTIVE" | "ARCHIVED";
 
@@ -148,10 +148,29 @@ export interface OrderDto extends OrderSummaryDto {
   items: OrderItemDto[];
   /** Admin views only */
   events?: OrderEventDto[];
+  /** Admin views only */
+  payments?: PaymentDto[];
+}
+
+export interface PaymentDto {
+  id: string;
+  provider: string;
+  providerRef: string;
+  chargeRef: string | null;
+  amountMinor: number;
+  currency: string;
+  status: PaymentStatus;
+  createdAt: string;
 }
 
 /** Returned by checkout; the token lets a guest open their confirmation page. */
 export interface CheckoutResultDto {
   number: number;
   accessToken: string;
+  /** Card payments on: the provider's payment page to send the customer to (null if it couldn't be created) */
+  paymentUrl: string | null;
+}
+
+export interface PayOrderResultDto {
+  paymentUrl: string;
 }

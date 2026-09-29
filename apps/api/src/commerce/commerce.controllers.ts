@@ -9,12 +9,13 @@ import {
   Patch,
   Post,
   Query,
+  type RawBodyRequest,
   Req,
   Res,
   UseGuards,
 } from "@nestjs/common";
 import { ApiCookieAuth, ApiTags } from "@nestjs/swagger";
-import { Throttle } from "@nestjs/throttler";
+import { SkipThrottle, Throttle } from "@nestjs/throttler";
 import type { Request, Response } from "express";
 import {
   adminOrderListQuerySchema,
@@ -25,6 +26,7 @@ import {
   forgotPasswordSchema,
   loginSchema,
   orderStatusUpdateSchema,
+  payOrderSchema,
   resetPasswordSchema,
   type AdminOrderListQuery,
   type AdminUserDto,
@@ -36,6 +38,7 @@ import {
   type ForgotPasswordInput,
   type LoginInput,
   type OrderStatusUpdateInput,
+  type PayOrderInput,
   type ResetPasswordInput,
 } from "@ecom/shared";
 import { cookieOptions, DAY_MS } from "../common/cookies";
@@ -44,6 +47,7 @@ import { AdminAuthGuard, CurrentAdmin } from "../auth/admin-auth.guard";
 import { CartService, type CartOwner } from "./cart.service";
 import { CustomersService, CUSTOMER_SESSION_DAYS } from "./customers.service";
 import { OrdersService } from "./orders.service";
+import { PaymentsService } from "./payments.service";
 import {
   CART_COOKIE,
   CartFeatureGuard,
@@ -200,10 +204,40 @@ export class CheckoutController {
     return this.orders.checkout(ownerOf(req, customer), body, customer);
   }
 
+  /** "Pay now" on an unpaid order: returns a payment page URL. 404 when card payments are off. */
+  @Post("orders/:number/pay")
+  @HttpCode(200)
+  @Throttle({ default: { ttl: 60_000, limit: 10 } })
+  pay(
+    @Param("number", ParseIntPipe) number: number,
+    @Body(new ZodValidationPipe(payOrderSchema)) body: PayOrderInput,
+    @CurrentCustomer() customer?: CustomerDto,
+  ) {
+    return this.orders.pay(number, body.token, customer);
+  }
+
   /** Order confirmation for guests: `?token=` is the secret returned by checkout. */
   @Get("orders/:number")
   getOrder(@Param("number", ParseIntPipe) number: number, @Query("token") token = "") {
     return this.orders.getWithToken(number, token);
+  }
+}
+
+/**
+ * Payment provider webhooks (Stripe calls this directly, not through the storefront). The signature
+ * is checked against the raw request body, so this needs the app created with `rawBody: true`.
+ */
+@ApiTags("payments")
+@SkipThrottle()
+@Controller("payments")
+export class PaymentsWebhookController {
+  constructor(private readonly payments: PaymentsService) {}
+
+  @Post("webhook")
+  @HttpCode(200)
+  async webhook(@Req() req: RawBodyRequest<Request>) {
+    await this.payments.handleWebhook(req.rawBody, req.headers);
+    return { received: true };
   }
 }
 

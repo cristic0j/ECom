@@ -174,6 +174,7 @@ model Order {
   note            String      @default("")
   items           OrderItem[]
   events          OrderEvent[]
+  payments        Payment[]
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
 
@@ -213,6 +214,52 @@ model OrderEvent {
   createdAt  DateTime     @default(now())
 
   @@index([orderId])
+}
+
+enum PaymentStatus {
+  /// Waiting for the customer to pay on the provider's page
+  PENDING
+  SUCCEEDED
+  /// The provider's payment page expired or the payment failed
+  FAILED
+  REFUNDED
+}
+
+/// One attempt to pay an order through a payment provider (a Stripe Checkout Session).
+/// An order can have several: each "Pay now" starts a new one.
+model Payment {
+  id              String        @id @default(cuid())
+  orderId         String
+  order           Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  provider        String
+  /// The provider's id for this attempt (Stripe: Checkout Session id)
+  providerRef     String
+  /// The provider's id for the captured money, used for refunds (Stripe: PaymentIntent id)
+  chargeRef       String?
+  amountMinor     Int
+  currency        String
+  status          PaymentStatus @default(PENDING)
+  /// Where to send the customer to pay; cleared once the attempt is over
+  redirectUrl     String?
+  expiresAt       DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@unique([provider, providerRef])
+  @@index([orderId])
+}
+
+/// Every webhook event received, stored raw. The unique key makes processing idempotent:
+/// a provider retrying the same event is recorded once and applied once.
+model PaymentWebhookEvent {
+  id         String   @id @default(cuid())
+  provider   String
+  eventId    String
+  type       String
+  payload    Json
+  receivedAt DateTime @default(now())
+
+  @@unique([provider, eventId])
 }
 
 model StoreSetting {

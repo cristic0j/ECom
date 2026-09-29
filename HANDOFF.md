@@ -12,7 +12,7 @@ The work is split into four phases:
 |---|---|---|
 | 1 | Product catalog + admin panel | ✅ done (2026-09-25) |
 | 2 | Customer accounts, cart, checkout, orders | ✅ done (2026-09-25) |
-| 3 | Payments (Stripe, via a provider interface) | ⬜ not started |
+| 3 | Payments (Stripe, via a provider interface) | ✅ done (2026-09-29) |
 | 4 | Stock management (per-variant inventory) | ⬜ not started |
 
 Full original plan: `~/.claude/plans/i-am-planning-to-recursive-shell.md`
@@ -26,6 +26,12 @@ Full original plan: `~/.claude/plans/i-am-planning-to-recursive-shell.md`
 - **Add to cart fix:** clicking repeatedly used to keep adding items. Now `components/store/add-to-cart.tsx` shows "Add to cart" until the selected variant is in the cart, then switches to a − / quantity / + stepper (− at 1 removes the line). One request runs at a time. The Playwright guest-checkout test covers it; 7/7 pass.
 - The store owner asked about the "Fulfilled" status: the admin button says "Mark as fulfilled", but the email says "has shipped". Optionally rename the admin label to "Shipped" (just the wording). The store owner didn't want a separate "Delivered" step.
 - **No git remote:** the repo exists only on this Mac. Recommend a private GitHub repo (as a backup, and needed for Railway/Render deploys) before deploying.
+- **Phase 3: Stripe card payments** built and switched on (`features.payments: true`). The store owner chose: Stripe's hosted page, **card only**, and unpaid orders stay open with "Pay now". The store owner did a test purchase in the browser and it worked. Details in "Phase 3: what's done" below.
+- Tests: 31 unit, 28 API e2e (6 new in `test/payments.e2e-spec.ts`), and 7 Playwright passing plus 1 skipped (the manual-payment test skips while card payments are on).
+
+**Next up (store owner to choose):** Phase 4 (stock), deploying (needs a Stripe account activated for live payments, plus a GitHub repo), or the small "Fulfilled" → "Shipped" admin rename.
+
+**Local Stripe testing needs the relay running:** `pnpm stripe:listen` (in a second terminal). Without it, card payments succeed on Stripe but orders stay "Awaiting payment" locally. The Stripe CLI is in git-ignored `.tools/stripe` (v1.52.0, authorized for the store owner's "ECom sandbox"); on another machine, download it again (README → Card payments). The API **refuses to start** with payments on and no `STRIPE_*` keys in `.env`.
 
 ## Previous session (2026-09-27)
 
@@ -246,13 +252,42 @@ Phase 2 is built too; see "Phase 2: what's done" below.
 
 ---
 
-## Next phases (designed for, not built)
+## Phase 3: what's done (2026-09-29)
 
-### Phase 3: payments
-- `PaymentProvider` interface (`createPayment`, `handleWebhook`, `refund`), with `StripeProvider` as the first implementation (Checkout Session or Payment Element).
-- A webhook endpoint with signature verification and idempotency (store processed event ids). An order becomes PAID **only from the webhook**, never from the client redirect.
-- A `Payment` model: provider, providerRef, amount, status, and the raw event log.
-- Admin: payment status on the order, plus a refund action. Gate everything behind `features.payments`; the Stripe keys go in env vars, never in StoreSettings.
+- **Provider layer** (`apps/api/src/payments/`):
+  - `PaymentProvider` interface (`createCheckout`, `cancelCheckout`, `parseWebhook`, `refund`)
+  - `StripeProvider` (Stripe Checkout, SDK `stripe@22`, API version `2026-08-26.dahlia`)
+  - `createPaymentProvider()` returns **null when `features.payments` is off** (the manual flow), and throws at startup if it's on without keys
+  - Env: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`
+- **DB** (migration `payments`):
+  - `Payment`: one row per Checkout Session; `providerRef` = session id, `chargeRef` = PaymentIntent id, status PENDING/SUCCEEDED/FAILED/REFUNDED, `redirectUrl`, `expiresAt`
+  - `PaymentWebhookEvent`: raw log, unique `(provider, eventId)` for idempotency
+- **Flow** (`commerce/payments.service.ts`, `orders.service.ts`):
+  - Checkout creates the PENDING order (the cart is cleared as before), then a Checkout Session, and returns `paymentUrl`. If Stripe is down, the order is still placed and `paymentUrl` is null.
+  - `POST orders/:number/pay` ("Pay now", by token or customer session) **reuses the open session** if it has more than 10 minutes left, so a double click can't cause a double charge.
+  - `POST payments/webhook` (raw body; `main.ts` sets `rawBody: true`; skips the throttler):
+    - The event row and its effects are written in one transaction.
+    - `checkout.session.completed` (paid) or `async_payment_succeeded` → PAID, actor `payment provider`.
+    - `expired` / `async_payment_failed` → the payment becomes FAILED (the order stays PENDING).
+    - An amount/currency mismatch, or a payment for an order that isn't PENDING, is **not** applied; a "Needs attention" history entry is added instead.
+  - Admin CANCELLED → expires open sessions first (409 if one was already paid). Admin REFUNDED → full refund through Stripe first (idempotency key `refund-<paymentId>`), outside the DB transaction.
+  - `order-mapping.ts` holds `toOrderDto` / `transitionOrder` / `assertTransition`, shared by both services; the admin DTO includes `payments`.
+- **Emails in card mode** (the store owner asked for fewer emails):
+  - **Nothing is sent at checkout.** Once the webhook marks the order PAID, the customer gets one "Order #N confirmed" email (`orderConfirmedEmail`: full summary, address and link) and the store gets "New order… ready to fulfil".
+  - Abandoned payments send nothing; the order page and account keep "Pay now".
+  - Manual mode is unchanged: "Order received" (with payment instructions) and the staff alert at checkout, then "Payment received" when an admin marks it paid.
+- **Web:**
+  - Checkout says "Continue to payment" and redirects to Stripe. The Back button from Stripe goes to the order page (`pageshow` handler).
+  - Order page: `?paid=1` shows "Confirming your payment…" (polls every 2 s, up to 30 s); unpaid orders show "Pay now" (`components/store/pay-now.tsx`, also on the account order page).
+  - Admin order: a Payments card with a "View in Stripe" link, "Refund €X to the customer", and "Needs attention" history entries.
+- **Tests:** `stripe-provider.spec.ts` checks signature verification and event mapping (signed with `generateTestHeaderString`); `payments.e2e-spec.ts` uses a fake provider; Playwright card test creates a real test-mode session (network + key needed), stubs Stripe's page, and sends a webhook signed with `STRIPE_WEBHOOK_SECRET` through the web `/api` proxy (this confirms the raw body survives the Next rewrite). `playwright.config.ts` now loads `../../.env`.
+- **Follow-ups:**
+  - Going live: activate the Stripe account, create the live webhook endpoint (README → Card payments → Production), and set up branding in Stripe.
+  - A payment that arrives for a cancelled order is flagged but must be refunded in Stripe by hand (CANCELLED → REFUNDED isn't an allowed transition).
+  - Partial refunds aren't supported (full refunds only).
+  - Unpaid orders are never auto-cancelled (the store owner's choice); stale ones are cancelled by hand.
+
+## Next phases (designed for, not built)
 
 ### Phase 4: stock management
 - `InventoryItem` per variant: `onHand` and `reserved`, with available = onHand − reserved.

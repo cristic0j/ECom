@@ -162,6 +162,13 @@ export const orderStatusUpdateSchema = z.object({
 });
 export type OrderStatusUpdateInput = z.infer<typeof orderStatusUpdateSchema>;
 
+/** "Pay now" on an unpaid order: guests prove access with the order's token, customers with their session. */
+export const payOrderSchema = z.object({ token: z.string().max(200).optional() });
+export type PayOrderInput = z.infer<typeof payOrderSchema>;
+
+export const paymentStatusSchema = z.enum(["PENDING", "SUCCEEDED", "FAILED", "REFUNDED"]);
+export type PaymentStatus = z.infer<typeof paymentStatusSchema>;
+
 export const adminOrderListQuerySchema = z.object({
   /** Order number, or part of the customer email */
   q: z.string().trim().max(200).optional(),

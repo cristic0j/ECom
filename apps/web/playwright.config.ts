@@ -1,5 +1,12 @@
 import { defineConfig, devices } from "@playwright/test";
 
+// The tests read the same .env as the servers (admin login, Stripe webhook secret)
+try {
+  process.loadEnvFile("../../.env");
+} catch {
+  // No .env (e.g. CI sets the variables directly)
+}
+
 /**
  * E2E against the real stack: dev DB (seeded), API and web.
  * Start them yourself (`pnpm dev` at the repo root) or let Playwright start them.

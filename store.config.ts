@@ -18,8 +18,10 @@ export const storeConfig = {
   features: {
     // Customer accounts, cart, checkout and orders
     cart: true,
+    // Card payments with Stripe (needs STRIPE_* env vars; see README → Card payments).
+    // Off = orders are paid by hand (bank transfer / cash on delivery) and marked paid in the admin.
+    payments: true,
     // Future modules — flip on as they are implemented
-    payments: false,
     inventory: false,
     reviews: false,
   },
@@ -32,7 +34,7 @@ export const storeConfig = {
     // Orders at or above this subtotal ship free; null = never free
     freeOverMinor: 5000 as number | null,
   },
-  // Until card payments exist, orders are paid by hand. Editable in admin → Settings.
+  // Shown when card payments are off and orders are paid by hand. Editable in admin → Settings.
   paymentInstructions:
     "After you place your order, we'll email you the payment details (bank transfer or cash on delivery). Your order ships once payment is received." as string,
 } as const;

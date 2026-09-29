@@ -7,6 +7,7 @@ import { configureApp } from "../src/configure-app";
 import { PrismaService } from "../src/prisma/prisma.service";
 import { EMAIL_PROVIDER, type EmailMessage, type EmailProvider } from "../src/email/email-provider";
 import { EmailService } from "../src/email/email.module";
+import { PAYMENT_PROVIDER } from "../src/payments/payment-provider";
 
 // 1x1 transparent PNG
 const PNG = Buffer.from(
@@ -55,8 +56,11 @@ describe("API (e2e)", () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(EMAIL_PROVIDER)
       .useValue(provider)
+      // Manual payment (card payments have their own suite in payments.e2e-spec.ts)
+      .overrideProvider(PAYMENT_PROVIDER)
+      .useValue(null)
       .compile();
-    app = moduleRef.createNestApplication<NestExpressApplication>();
+    app = moduleRef.createNestApplication<NestExpressApplication>({ rawBody: true });
     configureApp(app);
     await app.init();
     prisma = app.get(PrismaService);

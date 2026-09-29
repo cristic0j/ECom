@@ -10,3 +10,6 @@ apps/api/uploads
 .DS_Store
 test-results
 playwright-report
+
+# Local dev tools (e.g. the Stripe CLI), downloaded per machine
+.tools/

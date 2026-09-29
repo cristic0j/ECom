@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { formatMoney, ORDER_TRANSITIONS, type OrderDto, type OrderStatus } from "@ecom/shared";
+import { formatMoney, ORDER_TRANSITIONS, type OrderDto, type OrderStatus, type PaymentDto } from "@ecom/shared";
 import { adminApi } from "@/lib/admin-api";
 import { useMoney } from "@/lib/use-money";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,20 @@ import { ADMIN_ORDER_STATUS_LABEL, ADMIN_ORDER_STATUS_TONE, STATUS_ACTION } from
 import { OrderTotals } from "@/components/store/order-totals";
 
 const DESTRUCTIVE: OrderStatus[] = ["CANCELLED", "REFUNDED"];
+
+const PAYMENT_LABEL: Record<PaymentDto["status"], string> = {
+  PENDING: "Not paid yet",
+  SUCCEEDED: "Paid",
+  FAILED: "Expired / failed",
+  REFUNDED: "Refunded",
+};
+const PAYMENT_TONE = { PENDING: "warning", SUCCEEDED: "success", FAILED: "neutral", REFUNDED: "neutral" } as const;
+
+/** Stripe dashboard link for a payment (test-mode payments live under /test). */
+function stripeUrl(p: PaymentDto): string | null {
+  if (p.provider !== "stripe" || !p.chargeRef) return null;
+  return `https://dashboard.stripe.com/${p.providerRef.startsWith("cs_test_") ? "test/" : ""}payments/${p.chargeRef}`;
+}
 
 export default function AdminOrderPage() {
   const { number } = useParams<{ number: string }>();
@@ -35,9 +49,17 @@ export default function AdminOrderPage() {
   const format = (minor: number) => formatMoney(minor, order.currency, locale);
   const next = ORDER_TRANSITIONS[order.status];
   const a = order.shippingAddress;
+  // With a card payment on file, "refunded" sends the money back through Stripe
+  const cardPayment = order.payments?.find((p) => p.status === "SUCCEEDED");
+  const actionLabel = (s: OrderStatus) =>
+    s === "REFUNDED" && cardPayment ? `Refund ${format(cardPayment.amountMinor)} to the customer` : STATUS_ACTION[s];
 
   const move = async (status: OrderStatus) => {
-    if (DESTRUCTIVE.includes(status) && !confirm(`${STATUS_ACTION[status]} #${order.number}? This can't be undone.`)) return;
+    const warning =
+      status === "REFUNDED" && cardPayment
+        ? `Refund ${format(cardPayment.amountMinor)} to the customer's card for #${order.number}? This can't be undone.`
+        : `${STATUS_ACTION[status]} #${order.number}? This can't be undone.`;
+    if (DESTRUCTIVE.includes(status) && !confirm(warning)) return;
     setPending(status);
     setError(null);
     try {
@@ -109,7 +131,9 @@ export default function AdminOrderPage() {
                 <li key={e.id} className="flex flex-wrap gap-x-3">
                   <span className="text-muted-foreground tabular-nums">{new Date(e.createdAt).toLocaleString(locale)}</span>
                   <span>
-                    {e.fromStatus ? (
+                    {e.fromStatus === e.toStatus ? (
+                      <strong>Needs attention</strong>
+                    ) : e.fromStatus ? (
                       <>
                         {ADMIN_ORDER_STATUS_LABEL[e.fromStatus]} → <strong>{ADMIN_ORDER_STATUS_LABEL[e.toStatus]}</strong>
                       </>
@@ -143,13 +167,43 @@ export default function AdminOrderPage() {
                       disabled={pending !== null}
                       onClick={() => move(s)}
                     >
-                      {pending === s ? "Saving…" : STATUS_ACTION[s]}
+                      {pending === s ? "Saving…" : actionLabel(s)}
                     </Button>
                   ))}
                 </div>
               </>
             )}
           </Card>
+
+          {order.payments && order.payments.length > 0 && (
+            <Card className="space-y-3 text-sm">
+              <h2 className="font-semibold">Payments</h2>
+              <ul className="space-y-2">
+                {order.payments.map((p) => {
+                  const url = stripeUrl(p);
+                  return (
+                    <li key={p.id} className="flex flex-wrap items-center justify-between gap-2" data-testid="admin-payment">
+                      <span className="tabular-nums">
+                        {formatMoney(p.amountMinor, p.currency, locale)}
+                        <span className="block text-xs text-muted-foreground">
+                          {new Date(p.createdAt).toLocaleString(locale)}
+                          {url && (
+                            <>
+                              {" · "}
+                              <a href={url} target="_blank" rel="noreferrer" className="underline">
+                                View in Stripe
+                              </a>
+                            </>
+                          )}
+                        </span>
+                      </span>
+                      <Badge tone={PAYMENT_TONE[p.status]}>{PAYMENT_LABEL[p.status]}</Badge>
+                    </li>
+                  );
+                })}
+              </ul>
+            </Card>
+          )}
 
           <Card className="space-y-2 text-sm">
             <h2 className="font-semibold">Customer</h2>

@@ -9,7 +9,9 @@
     "test": "turbo run test",
     "db:migrate": "pnpm --filter @ecom/db migrate",
     "db:seed": "pnpm --filter @ecom/db seed",
-    "db:studio": "pnpm --filter @ecom/db studio"
+    "db:studio": "pnpm --filter @ecom/db studio",
+    "stripe:login": ".tools/stripe login",
+    "stripe:listen": ".tools/stripe listen --events checkout.session.completed,checkout.session.async_payment_succeeded,checkout.session.async_payment_failed,checkout.session.expired --forward-to localhost:4000/api/payments/webhook"
   },
   "devDependencies": {
     "turbo": "^2.5.0",

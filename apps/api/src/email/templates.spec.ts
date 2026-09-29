@@ -1,5 +1,12 @@
 import type { OrderDto } from "@ecom/shared";
-import { escapeHtml, newOrderAlertEmail, orderReceivedEmail, orderStatusEmail, passwordResetEmail } from "./templates";
+import {
+  escapeHtml,
+  newOrderAlertEmail,
+  orderConfirmedEmail,
+  orderReceivedEmail,
+  orderStatusEmail,
+  passwordResetEmail,
+} from "./templates";
 
 const store = { name: "Demo <Store>", locale: "en-US", paymentInstructions: "Pay by bank transfer to IBAN DE00." };
 
@@ -66,10 +73,23 @@ describe("email templates", () => {
     expect(email.text).toContain("Shipping  Free");
   });
 
-  it("includes the customer note in the store alert", () => {
-    const email = newOrderAlertEmail(store, order({ note: "Leave at the door" }), "https://shop.test/admin/orders/1001");
+  it("confirms a card-paid order with the full summary and no payment instructions", () => {
+    const email = orderConfirmedEmail(store, order(), "https://shop.test/order/1001?token=abc");
+    expect(email.subject).toBe("Order #1001 confirmed");
+    expect(email.text).toContain("we've received your payment");
+    expect(email.text).toContain("Total  €54.99");
+    expect(email.text).toContain("View your order: https://shop.test/order/1001?token=abc");
+    expect(email.text).not.toContain("IBAN");
+  });
+
+  it("includes the customer note in the store alert and says whether it's paid", () => {
+    const email = newOrderAlertEmail(store, order({ note: "Leave at the door" }), "https://shop.test/admin/orders/1001", {
+      paid: false,
+    });
     expect(email.subject).toBe("New order #1001 from ada@example.com");
     expect(email.text).toContain("Customer note: Leave at the door");
+    expect(email.text).toContain("waiting for payment");
+    expect(newOrderAlertEmail(store, order(), "https://x", { paid: true }).text).toContain("ready to fulfil");
   });
 
   it("only emails the customer for statuses they care about", () => {

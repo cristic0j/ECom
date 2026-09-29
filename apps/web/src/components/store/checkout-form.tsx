@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { checkoutSchema } from "@ecom/shared";
 import { shopApi } from "@/lib/shop-api";
 import { buttonClass, Button } from "@/components/ui/button";
@@ -26,9 +26,12 @@ type AddressField = (typeof ADDRESS_FIELDS)[number][0];
 export function CheckoutForm({
   defaultCountry,
   paymentInstructions,
+  cardPayments,
 }: {
   defaultCountry: string;
   paymentInstructions: string;
+  /** Card payments on: after placing the order the customer is sent to the payment page */
+  cardPayments: boolean;
 }) {
   const router = useRouter();
   const { cart, customer, format, refreshCart } = useShop();
@@ -51,6 +54,17 @@ export function CheckoutForm({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [placing, setPlacing] = useState(false);
+  // Set while the browser is on its way to the payment page
+  const [leftForPayment, setLeftForPayment] = useState<string | null>(null);
+
+  // Coming back with the browser's Back button restores this page as it was left (locked, with
+  // an empty cart on the server); send the customer to their order, which offers "Pay now"
+  useEffect(() => {
+    if (!leftForPayment) return;
+    const onShow = (e: PageTransitionEvent) => e.persisted && router.replace(leftForPayment);
+    window.addEventListener("pageshow", onShow);
+    return () => window.removeEventListener("pageshow", onShow);
+  }, [leftForPayment, router]);
 
   if (!cart) return <p className="text-muted-foreground">Loading…</p>;
   if (cart.items.length === 0 && !placing) {
@@ -79,7 +93,14 @@ export function CheckoutForm({
     setErrors({});
     setPlacing(true);
     try {
-      const { number, accessToken } = await shopApi.checkout(parsed.data);
+      const { number, accessToken, paymentUrl } = await shopApi.checkout(parsed.data);
+      if (paymentUrl) {
+        // Leaving the site: the cart is already empty on the server, and "placing" keeps the form locked
+        setLeftForPayment(`/order/${number}?token=${encodeURIComponent(accessToken)}`);
+        window.location.assign(paymentUrl);
+        return;
+      }
+      // Manual payment, or the payment page couldn't be opened: the order page offers "Pay now"
       router.push(`/order/${number}?token=${encodeURIComponent(accessToken)}`);
       await refreshCart();
     } catch (err) {
@@ -152,13 +173,23 @@ export function CheckoutForm({
           ))}
         </ul>
         <OrderTotals {...cart} format={(m) => format(m)} />
-        {paymentInstructions && (
-          <div className="whitespace-pre-line rounded-(--radius) bg-muted p-3 text-sm text-muted-foreground">
-            <strong className="text-foreground">Payment:</strong> {paymentInstructions}
-          </div>
+        {cardPayments ? (
+          <p className="text-sm text-muted-foreground">You&apos;ll pay securely by card on the next page.</p>
+        ) : (
+          paymentInstructions && (
+            <div className="whitespace-pre-line rounded-(--radius) bg-muted p-3 text-sm text-muted-foreground">
+              <strong className="text-foreground">Payment:</strong> {paymentInstructions}
+            </div>
+          )
         )}
         <Button type="submit" size="lg" className="w-full" disabled={placing}>
-          {placing ? "Placing order…" : "Place order"}
+          {cardPayments
+            ? placing
+              ? "Opening payment page…"
+              : "Continue to payment"
+            : placing
+              ? "Placing order…"
+              : "Place order"}
         </Button>
       </Card>
     </form>

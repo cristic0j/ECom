@@ -8,8 +8,17 @@ export const metadata: Metadata = { title: "Your order", robots: { index: false 
 export default async function OrderPage({ params, searchParams }: PageProps<"/order/[number]">) {
   await requireCartFeature();
   const number = Number((await params).number);
-  const { token } = await searchParams;
+  const { token, paid } = await searchParams;
   if (!Number.isInteger(number) || typeof token !== "string") notFound();
-  const { paymentInstructions } = await getStore();
-  return <OrderConfirmation number={number} token={token} paymentInstructions={paymentInstructions} />;
+  const { paymentInstructions, features } = await getStore();
+  return (
+    <OrderConfirmation
+      number={number}
+      token={token}
+      paymentInstructions={paymentInstructions}
+      cardPayments={features.payments}
+      // Set by the payment page's return link; the order may not be marked paid yet
+      returnedFromPayment={paid === "1"}
+    />
+  );
 }

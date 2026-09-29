@@ -25,6 +25,10 @@ const schema = z
     EMAIL_REPLY_TO: z.string().optional(),
     /** Comma-separated; who gets "new order" alerts. Empty = every ADMIN user */
     ORDER_NOTIFY_EMAIL: z.string().optional(),
+    /** Required when `features.payments` is on. sk_test_… locally, sk_live_… in production */
+    STRIPE_SECRET_KEY: z.string().optional(),
+    /** whsec_…: from `stripe listen` locally, or the webhook endpoint in the Stripe dashboard */
+    STRIPE_WEBHOOK_SECRET: z.string().optional(),
   })
   .refine(
     (e) => e.NODE_ENV !== "production" || (e.JWT_SECRET.length >= 32 && !e.JWT_SECRET.startsWith("change-me")),

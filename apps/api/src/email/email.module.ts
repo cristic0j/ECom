@@ -7,6 +7,7 @@ import { SettingsService } from "../settings/settings.module";
 import { createEmailProvider, EMAIL_PROVIDER, type EmailProvider } from "./email-provider";
 import {
   newOrderAlertEmail,
+  orderConfirmedEmail,
   orderReceivedEmail,
   orderStatusEmail,
   passwordResetEmail,
@@ -31,14 +32,27 @@ export class EmailService {
     private readonly prisma: PrismaService,
   ) {}
 
+  /**
+   * Manual payment: at checkout, "order received" (with payment instructions) to the customer and
+   * the new-order alert to the store. With card payments nothing is sent at checkout; see orderPaidOnline.
+   */
   orderPlaced(order: OrderDto, accessToken: string): void {
     this.queue(async () => {
       const store = await this.store();
       await this.deliver([order.email], orderReceivedEmail(store, order, orderUrl(order, accessToken)));
-      const staff = await this.staffRecipients();
-      if (staff.length) {
-        await this.deliver(staff, newOrderAlertEmail(store, order, siteUrl(`/admin/orders/${order.number}`)));
-      }
+      await this.alertStaff(store, order, { paid: false });
+    });
+  }
+
+  /**
+   * Card payments: the payment webhook marked the order PAID. One "order confirmed" email to the
+   * customer and the alert to the store; abandoned payments send nothing.
+   */
+  orderPaidOnline(order: OrderDto, accessToken: string): void {
+    this.queue(async () => {
+      const store = await this.store();
+      await this.deliver([order.email], orderConfirmedEmail(store, order, orderUrl(order, accessToken)));
+      await this.alertStaff(store, order, { paid: true });
     });
   }
 
@@ -66,6 +80,11 @@ export class EmailService {
       .catch((err) => this.logger.error(`Email failed: ${err instanceof Error ? err.message : err}`))
       .finally(() => this.inFlight.delete(p));
     this.inFlight.add(p);
+  }
+
+  private async alertStaff(store: EmailStore, order: OrderDto, { paid }: { paid: boolean }): Promise<void> {
+    const staff = await this.staffRecipients();
+    if (staff.length) await this.deliver(staff, newOrderAlertEmail(store, order, siteUrl(`/admin/orders/${order.number}`), { paid }));
   }
 
   private deliver(to: string[], email: RenderedEmail): Promise<void> {

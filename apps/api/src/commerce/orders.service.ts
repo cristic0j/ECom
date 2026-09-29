@@ -1,11 +1,8 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { timingSafeEqual } from "node:crypto";
 import type { Prisma } from "@ecom/db";
 import {
-  addressSchema,
-  canTransition,
   computeTotals,
-  type Address,
   type AdminOrderListQuery,
   type CheckoutInput,
   type CheckoutResultDto,
@@ -19,15 +16,8 @@ import { EmailService } from "../email/email.module";
 import { PrismaService } from "../prisma/prisma.service";
 import { SettingsService } from "../settings/settings.module";
 import { CartService, isAvailable, newToken, type CartOwner } from "./cart.service";
-
-const orderDetailInclude = {
-  items: { orderBy: { id: "asc" } },
-  events: { orderBy: { createdAt: "asc" } },
-} satisfies Prisma.OrderInclude;
-const orderSummaryInclude = { items: { select: { quantity: true } } } satisfies Prisma.OrderInclude;
-
-type OrderDetail = Prisma.OrderGetPayload<{ include: typeof orderDetailInclude }>;
-type OrderSummary = Prisma.OrderGetPayload<{ include: typeof orderSummaryInclude }>;
+import { assertTransition, orderDetailInclude, orderSummaryInclude, toOrderDto, toOrderSummaryDto, transitionOrder } from "./order-mapping";
+import { PaymentsService } from "./payments.service";
 
 @Injectable()
 export class OrdersService {
@@ -36,10 +26,14 @@ export class OrdersService {
     private readonly settings: SettingsService,
     private readonly carts: CartService,
     private readonly email: EmailService,
+    private readonly payments: PaymentsService,
   ) {}
 
+  private readonly logger = new Logger(OrdersService.name);
+
   /**
-   * Turns the cart into a PENDING order. Prices, availability and totals are recomputed here from the
+   * Turns the cart into a PENDING order. With card payments on, also opens the payment page and
+   * returns its URL (null if the provider is unreachable; the order page then offers "Pay now"). Prices, availability and totals are recomputed here from the
    * catalog; nothing the browser sent about money is used.
    */
   async checkout(owner: CartOwner, input: CheckoutInput, customer?: CustomerDto): Promise<CheckoutResultDto> {
@@ -89,15 +83,36 @@ export class OrdersService {
 
     // After the commit, so an email never goes out for an order that was rolled back
     const placed = await this.prisma.order.findUniqueOrThrow({ where: { number: result.number }, include: orderDetailInclude });
-    this.email.orderPlaced(toOrderDto(placed, { withEvents: false }), placed.accessToken);
-    return result;
+    // With card payments the customer hears from us once the payment goes through (PaymentsService)
+    if (!this.payments.enabled) {
+      this.email.orderPlaced(toOrderDto(placed, { admin: false }), placed.accessToken);
+      return { ...result, paymentUrl: null };
+    }
+
+    const paymentUrl = await this.payments.startCheckout(placed.id).catch((err) => {
+      this.logger.error(`Order #${placed.number}: ${err instanceof Error ? err.message : err}`);
+      return null;
+    });
+    return { ...result, paymentUrl };
+  }
+
+  /**
+   * "Pay now" for an unpaid order. Guests prove access with the order's token; a signed-in
+   * customer can pay their own orders without it.
+   */
+  async pay(number: number, token: string | undefined, customer?: CustomerDto): Promise<{ paymentUrl: string }> {
+    if (!this.payments.enabled) throw new NotFoundException();
+    const order = await this.prisma.order.findUnique({ where: { number }, select: { id: true, accessToken: true, customerId: true } });
+    const allowed = order && ((token && safeEqual(order.accessToken, token)) || (customer && order.customerId === customer.id));
+    if (!allowed) throw new NotFoundException("Order not found");
+    return { paymentUrl: await this.payments.startCheckout(order.id) };
   }
 
   /** Guest access: the confirmation link carries the order's secret token. */
   async getWithToken(number: number, token: string): Promise<OrderDto> {
     const order = await this.prisma.order.findUnique({ where: { number }, include: orderDetailInclude });
     if (!order || !safeEqual(order.accessToken, token)) throw new NotFoundException("Order not found");
-    return toOrderDto(order, { withEvents: false });
+    return toOrderDto(order, { admin: false });
   }
 
   async listForCustomer(customerId: string): Promise<OrderSummaryDto[]> {
@@ -112,7 +127,7 @@ export class OrdersService {
   async getForCustomer(customerId: string, number: number): Promise<OrderDto> {
     const order = await this.prisma.order.findFirst({ where: { number, customerId }, include: orderDetailInclude });
     if (!order) throw new NotFoundException("Order not found");
-    return toOrderDto(order, { withEvents: false });
+    return toOrderDto(order, { admin: false });
   }
 
   async adminList({ q, status, page, pageSize }: AdminOrderListQuery): Promise<Paginated<OrderSummaryDto>> {
@@ -137,26 +152,31 @@ export class OrdersService {
   async adminGet(number: number): Promise<OrderDto> {
     const order = await this.prisma.order.findUnique({ where: { number }, include: orderDetailInclude });
     if (!order) throw new NotFoundException("Order not found");
-    return toOrderDto(order, { withEvents: true });
+    return toOrderDto(order, { admin: true });
   }
 
-  /** Moves an order along ORDER_TRANSITIONS and records who did it. */
+  /**
+   * Moves an order along ORDER_TRANSITIONS and records who did it. With card payments on,
+   * cancelling closes the order's open payment pages first, and refunding sends the money back
+   * through the provider first, so a failure there leaves the order unchanged.
+   */
   async setStatus(number: number, { status, note }: OrderStatusUpdateInput, actor: string): Promise<OrderDto> {
+    const order = await this.prisma.order.findUnique({ where: { number }, select: { id: true, status: true } });
+    if (!order) throw new NotFoundException("Order not found");
+    // Checked up front too, so nothing is refunded or closed for a change that isn't allowed
+    assertTransition(order.status, status);
+
+    if (status === "CANCELLED") await this.payments.cancelOpenCheckouts(order.id);
+    const refundedPaymentId = status === "REFUNDED" ? await this.payments.refundCardPayment(order.id) : null;
+
     await this.prisma.$transaction(async (tx) => {
-      const order = await tx.order.findUnique({ where: { number }, select: { id: true, status: true } });
-      if (!order) throw new NotFoundException("Order not found");
-      if (!canTransition(order.status, status)) {
-        throw new ConflictException(`A ${order.status.toLowerCase()} order can't be marked ${status.toLowerCase()}`);
-      }
-      // Guarded on the old status so two admins clicking at once can't both apply a change
-      const { count } = await tx.order.updateMany({ where: { id: order.id, status: order.status }, data: { status } });
-      if (count === 0) throw new ConflictException("The order was changed by someone else. Reload and try again.");
-      await tx.orderEvent.create({ data: { orderId: order.id, fromStatus: order.status, toStatus: status, actor, note } });
+      await transitionOrder(tx, order, status, actor, note);
+      if (refundedPaymentId) await tx.payment.update({ where: { id: refundedPaymentId }, data: { status: "REFUNDED" } });
     });
     const updated = await this.prisma.order.findUniqueOrThrow({ where: { number }, include: orderDetailInclude });
     // The admin note stays internal; the customer email only says what changed
-    this.email.orderStatusChanged(toOrderDto(updated, { withEvents: false }), updated.accessToken);
-    return toOrderDto(updated, { withEvents: true });
+    this.email.orderStatusChanged(toOrderDto(updated, { admin: false }), updated.accessToken);
+    return toOrderDto(updated, { admin: true });
   }
 
   /** Counts per status, for the admin dashboard. */
@@ -170,49 +190,4 @@ function safeEqual(a: string, b: string): boolean {
   const x = Buffer.from(a);
   const y = Buffer.from(b);
   return x.length === y.length && timingSafeEqual(x, y);
-}
-
-function toOrderSummaryDto(o: OrderSummary | OrderDetail): OrderSummaryDto {
-  return {
-    id: o.id,
-    number: o.number,
-    email: o.email,
-    status: o.status,
-    currency: o.currency,
-    totalMinor: o.totalMinor,
-    itemCount: o.items.reduce((n, i) => n + i.quantity, 0),
-    createdAt: o.createdAt.toISOString(),
-  };
-}
-
-function toOrderDto(o: OrderDetail, { withEvents }: { withEvents: boolean }): OrderDto {
-  const address = addressSchema.safeParse(o.shippingAddress);
-  return {
-    ...toOrderSummaryDto(o),
-    customerId: o.customerId,
-    subtotalMinor: o.subtotalMinor,
-    shippingMinor: o.shippingMinor,
-    shippingAddress: address.success ? address.data : (o.shippingAddress as unknown as Address),
-    note: o.note,
-    items: o.items.map((i) => ({
-      id: i.id,
-      variantId: i.variantId,
-      productTitle: i.productTitle,
-      variantTitle: i.variantTitle,
-      sku: i.sku,
-      unitPriceMinor: i.unitPriceMinor,
-      quantity: i.quantity,
-      lineTotalMinor: i.lineTotalMinor,
-    })),
-    ...(withEvents && {
-      events: o.events.map((e) => ({
-        id: e.id,
-        fromStatus: e.fromStatus,
-        toStatus: e.toStatus,
-        actor: e.actor,
-        note: e.note,
-        createdAt: e.createdAt.toISOString(),
-      })),
-    }),
-  };
 }

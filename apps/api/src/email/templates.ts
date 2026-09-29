@@ -87,6 +87,7 @@ function render(store: EmailStore, subject: string, blocks: Block[]): RenderedEm
 
 const greeting = (order: OrderDto) => `Hi ${order.shippingAddress.name.split(" ")[0] || "there"},`;
 
+/** Manual payment: sent at checkout, with the store's payment instructions. */
 export function orderReceivedEmail(store: EmailStore, order: OrderDto, orderUrl: string): RenderedEmail {
   return render(store, `Order #${order.number} received`, [
     { p: greeting(order) },
@@ -98,9 +99,29 @@ export function orderReceivedEmail(store: EmailStore, order: OrderDto, orderUrl:
   ]);
 }
 
-export function newOrderAlertEmail(store: EmailStore, order: OrderDto, adminUrl: string): RenderedEmail {
+/** Card payments: the only email for a new order, sent once the payment has gone through. */
+export function orderConfirmedEmail(store: EmailStore, order: OrderDto, orderUrl: string): RenderedEmail {
+  return render(store, `Order #${order.number} confirmed`, [
+    { p: greeting(order) },
+    { p: `Thank you, we've received your payment. Here's a summary of order #${order.number}. We'll email you again when it ships.` },
+    { order, locale: store.locale },
+    { address: order.shippingAddress },
+    { button: "View your order", href: orderUrl },
+  ]);
+}
+
+export function newOrderAlertEmail(
+  store: EmailStore,
+  order: OrderDto,
+  adminUrl: string,
+  { paid }: { paid: boolean },
+): RenderedEmail {
   return render(store, `New order #${order.number} from ${order.email}`, [
-    { p: `${order.email} placed order #${order.number}. It's waiting for payment.` },
+    {
+      p: paid
+        ? `${order.email} placed and paid order #${order.number}. It's ready to fulfil.`
+        : `${order.email} placed order #${order.number}. It's waiting for payment.`,
+    },
     ...(order.note ? [{ p: `Customer note: ${order.note}` }] : []),
     { order, locale: store.locale },
     { address: order.shippingAddress },

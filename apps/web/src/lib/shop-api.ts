@@ -8,6 +8,7 @@ import type {
   CustomerRegisterInput,
   OrderDto,
   OrderSummaryDto,
+  PayOrderResultDto,
 } from "@ecom/shared";
 import { json, request } from "./api-client";
 
@@ -22,6 +23,8 @@ export const shopApi = {
   checkout: (input: CheckoutInput) => request<CheckoutResultDto>("/checkout", json("POST", input)),
   order: (number: number, token: string) =>
     request<OrderDto>(`/orders/${number}?token=${encodeURIComponent(token)}`),
+  payOrder: (number: number, token?: string) =>
+    request<PayOrderResultDto>(`/orders/${number}/pay`, json("POST", { token })),
 
   register: (input: CustomerRegisterInput) => request<CustomerDto>("/account/register", json("POST", input)),
   login: (email: string, password: string) => request<CustomerDto>("/account/login", json("POST", { email, password })),

@@ -7,7 +7,8 @@ import { configureApp } from "./configure-app";
 import { env } from "./config/env";
 
 async function bootstrap() {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  // rawBody: payment webhooks verify their signature against the exact bytes received
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { rawBody: true });
   configureApp(app);
 
   const docs = new DocumentBuilder()
