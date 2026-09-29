@@ -114,7 +114,16 @@ test("guest buys a product and the admin marks the order paid", async ({ page })
   await page.getByRole("button", { name: "L", exact: true }).click();
   await page.getByRole("button", { name: "White", exact: true }).click();
   await page.getByRole("button", { name: "Add to cart" }).click();
-  await expect(page.getByRole("button", { name: "Added to cart" })).toBeVisible();
+  await expect(page.getByTestId("product-quantity")).toHaveText("1");
+  await expect(page.getByTestId("cart-link")).toHaveAccessibleName("Cart, 1 item");
+  // The button becomes a stepper: + adds one, − at 1 removes the line again
+  await page.getByRole("button", { name: "Increase quantity" }).click();
+  await expect(page.getByTestId("cart-link")).toHaveAccessibleName("Cart, 2 items");
+  await page.getByRole("button", { name: "Decrease quantity" }).click();
+  await expect(page.getByTestId("product-quantity")).toHaveText("1");
+  await page.getByRole("button", { name: "Remove from cart" }).click();
+  await expect(page.getByTestId("cart-link")).toHaveAccessibleName("Cart, 0 items");
+  await page.getByRole("button", { name: "Add to cart" }).click();
   await expect(page.getByTestId("cart-link")).toHaveAccessibleName("Cart, 1 item");
 
   await page.getByRole("link", { name: "View cart and check out" }).click();

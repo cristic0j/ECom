@@ -1,6 +1,6 @@
 # Project Handoff — E-commerce Template
 
-_Last updated: 2026-09-27. Read this first when resuming work._
+_Last updated: 2026-09-29. Read this first when resuming work._
 
 ## Goal
 
@@ -19,9 +19,17 @@ Full original plan: `~/.claude/plans/i-am-planning-to-recursive-shell.md`
 
 ---
 
-## ▶ Where we left off (session 2026-09-27)
+## ▶ Where we left off (session 2026-09-29)
 
-**Done this session:** **order emails** and customer **forgot password** (details in "Order emails: what's done" below). The store owner chose this over Stripe, stock and deploying.
+**Done this session:**
+- The store owner tested the order emails and password reset by hand in the browser, and everything worked. Committed as `4809d70`.
+- **Add to cart fix:** clicking repeatedly used to keep adding items. Now `components/store/add-to-cart.tsx` shows "Add to cart" until the selected variant is in the cart, then switches to a − / quantity / + stepper (− at 1 removes the line). One request runs at a time. The Playwright guest-checkout test covers it; 7/7 pass.
+- The store owner asked about the "Fulfilled" status: the admin button says "Mark as fulfilled", but the email says "has shipped". Optionally rename the admin label to "Shipped" (just the wording). The store owner didn't want a separate "Delivered" step.
+- **No git remote:** the repo exists only on this Mac. Recommend a private GitHub repo (as a backup, and needed for Railway/Render deploys) before deploying.
+
+## Previous session (2026-09-27)
+
+**Done that session:** **order emails** and customer **forgot password** (details in "Order emails: what's done" below). The store owner chose this over Stripe, stock and deploying.
 - Tests: 26 unit, 22 API e2e and 7 Playwright, all green.
 - Checked by hand: `POST /account/forgot-password` prints the reset email in the `pnpm dev` terminal, and the new pages load.
 
