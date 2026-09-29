@@ -25,6 +25,9 @@ export const shopApi = {
 
   register: (input: CustomerRegisterInput) => request<CustomerDto>("/account/register", json("POST", input)),
   login: (email: string, password: string) => request<CustomerDto>("/account/login", json("POST", { email, password })),
+  forgotPassword: (email: string) => request<void>("/account/forgot-password", json("POST", { email })),
+  resetPassword: (token: string, password: string) =>
+    request<CustomerDto>("/account/reset-password", json("POST", { token, password })),
   logout: () => request<void>("/account/logout", json("POST")),
   me: () => request<CustomerDto>("/account/me"),
   myOrders: () => request<OrderSummaryDto[]>("/account/orders"),

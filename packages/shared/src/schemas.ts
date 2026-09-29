@@ -95,6 +95,8 @@ export const storeSettingsSchema = z
         freeOverMinor: z.number().int().nonnegative().nullable(),
       })
       .partial(),
+    /** Shown at checkout, on the order page and in the order email while an order awaits payment */
+    paymentInstructions: z.string().trim().max(2000),
   })
   .partial()
   .strict();
@@ -110,6 +112,15 @@ export const customerRegisterSchema = z.object({
   name: z.string().trim().max(120).default(""),
 });
 export type CustomerRegisterInput = z.infer<typeof customerRegisterSchema>;
+
+export const forgotPasswordSchema = z.object({ email });
+export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
+
+export const resetPasswordSchema = z.object({
+  token: z.string().min(1).max(2000),
+  password: customerRegisterSchema.shape.password,
+});
+export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
 
 export const cartAddSchema = z.object({
   variantId: z.string().min(1),

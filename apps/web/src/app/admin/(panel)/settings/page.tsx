@@ -6,7 +6,7 @@ import { storeConfig } from "@store-config";
 import { adminApi } from "@/lib/admin-api";
 import { minorToInput, parseMoneyToMinor } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Field, Input } from "@/components/ui/form";
+import { Field, Input, Textarea } from "@/components/ui/form";
 import { Alert, Card } from "@/components/ui/misc";
 import { PageHeader, useAdmin } from "@/components/admin/admin-shell";
 import { revalidateStorefront } from "../../actions";
@@ -23,6 +23,7 @@ const defaults = {
   radius: storeConfig.theme.radius,
   shippingFlat: minorToInput(storeConfig.shipping.flatRateMinor),
   shippingFreeOver: minorToInput(storeConfig.shipping.freeOverMinor),
+  paymentInstructions: storeConfig.paymentInstructions,
 };
 type Form = Record<keyof typeof defaults, string>;
 
@@ -77,6 +78,7 @@ export default function SettingsPage() {
       locale: form.locale,
       theme: { primary: form.primary, primaryForeground: form.primaryForeground, accent: form.accent, radius: form.radius },
       shipping: { flatRateMinor, freeOverMinor },
+      paymentInstructions: form.paymentInstructions,
     };
     try {
       await adminApi.updateSettings(patch);
@@ -158,6 +160,22 @@ export default function SettingsPage() {
               />
             </Field>
           </div>
+        </Card>
+        <Card className="space-y-4">
+          <h2 className="font-semibold">Payment</h2>
+          <Field
+            label="Payment instructions"
+            htmlFor="paymentInstructions"
+            hint="Shown at checkout, on the order page and in the order confirmation email, e.g. your bank details."
+          >
+            <Textarea
+              id="paymentInstructions"
+              rows={4}
+              maxLength={2000}
+              value={form.paymentInstructions}
+              onChange={set("paymentInstructions")}
+            />
+          </Field>
         </Card>
       </fieldset>
     </form>

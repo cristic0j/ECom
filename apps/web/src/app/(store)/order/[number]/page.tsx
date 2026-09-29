@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { requireCartFeature } from "@/lib/store";
+import { getStore, requireCartFeature } from "@/lib/store";
 import { OrderConfirmation } from "@/components/store/order-confirmation";
 
 export const metadata: Metadata = { title: "Your order", robots: { index: false } };
@@ -10,5 +10,6 @@ export default async function OrderPage({ params, searchParams }: PageProps<"/or
   const number = Number((await params).number);
   const { token } = await searchParams;
   if (!Number.isInteger(number) || typeof token !== "string") notFound();
-  return <OrderConfirmation number={number} token={token} />;
+  const { paymentInstructions } = await getStore();
+  return <OrderConfirmation number={number} token={token} paymentInstructions={paymentInstructions} />;
 }

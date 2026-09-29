@@ -15,6 +15,7 @@ import {
   type OrderSummaryDto,
   type Paginated,
 } from "@ecom/shared";
+import { EmailService } from "../email/email.module";
 import { PrismaService } from "../prisma/prisma.service";
 import { SettingsService } from "../settings/settings.module";
 import { CartService, isAvailable, newToken, type CartOwner } from "./cart.service";
@@ -34,6 +35,7 @@ export class OrdersService {
     private readonly prisma: PrismaService,
     private readonly settings: SettingsService,
     private readonly carts: CartService,
+    private readonly email: EmailService,
   ) {}
 
   /**
@@ -43,7 +45,7 @@ export class OrdersService {
   async checkout(owner: CartOwner, input: CheckoutInput, customer?: CustomerDto): Promise<CheckoutResultDto> {
     const { currency, shipping } = await this.settings.commerce();
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const found = await this.carts.find(owner, tx);
       if (!found) throw new BadRequestException("Your cart is empty");
       // Lock the cart so a double-submitted checkout can't turn the same cart into two orders
@@ -84,6 +86,11 @@ export class OrdersService {
       await tx.cartItem.deleteMany({ where: { cartId: cart.id } });
       return { number: order.number, accessToken: order.accessToken };
     });
+
+    // After the commit, so an email never goes out for an order that was rolled back
+    const placed = await this.prisma.order.findUniqueOrThrow({ where: { number: result.number }, include: orderDetailInclude });
+    this.email.orderPlaced(toOrderDto(placed, { withEvents: false }), placed.accessToken);
+    return result;
   }
 
   /** Guest access: the confirmation link carries the order's secret token. */
@@ -146,7 +153,10 @@ export class OrdersService {
       if (count === 0) throw new ConflictException("The order was changed by someone else. Reload and try again.");
       await tx.orderEvent.create({ data: { orderId: order.id, fromStatus: order.status, toStatus: status, actor, note } });
     });
-    return this.adminGet(number);
+    const updated = await this.prisma.order.findUniqueOrThrow({ where: { number }, include: orderDetailInclude });
+    // The admin note stays internal; the customer email only says what changed
+    this.email.orderStatusChanged(toOrderDto(updated, { withEvents: false }), updated.accessToken);
+    return toOrderDto(updated, { withEvents: true });
   }
 
   /** Counts per status, for the admin dashboard. */

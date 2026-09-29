@@ -66,7 +66,9 @@ cd apps/web && pnpm test:e2e        # Playwright; starts the dev servers if they
    | `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_PUBLIC_URL` | Your bucket (AWS S3, Cloudflare R2 or any S3-compatible store). Leave `S3_ENDPOINT` empty for AWS. |
    | `IMAGE_HOSTS` | Hostname of `S3_PUBLIC_URL` (comma-separated if there's more than one), so Next.js will optimize those images |
    | `API_INTERNAL_URL` | Where the web server reaches the API, e.g. `http://api.internal:4000` |
-   | `SITE_URL` | The public store URL, e.g. `https://shop.example.com` (used for the sitemap and canonical URLs) |
+   | `SITE_URL` | The public store URL, e.g. `https://shop.example.com` (used for the sitemap, canonical URLs and links in emails). The API needs it too. |
+   | `EMAIL_DRIVER`, `RESEND_API_KEY`, `EMAIL_FROM` | `resend`, your Resend API key, and a sender such as `My Store <orders@shop.example.com>`. Verify the sender's domain in Resend first. With the default `console`, emails are only printed in the API log. |
+   | `ORDER_NOTIFY_EMAIL`, `EMAIL_REPLY_TO` | Optional. Who gets "new order" alerts (default: every ADMIN user) and where customer replies go (default: the sender). |
    | `API_PUBLIC_URL`, `WEB_ORIGIN` | The API's public URL and the store's origin. They only matter if browsers call the API directly (see below). |
 
    `IMAGE_HOSTS`, `API_INTERNAL_URL` and `SITE_URL` are read when the web app is **built**, so set them for the build as well as at runtime.

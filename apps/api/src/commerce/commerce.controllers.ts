@@ -22,8 +22,10 @@ import {
   cartUpdateSchema,
   checkoutSchema,
   customerRegisterSchema,
+  forgotPasswordSchema,
   loginSchema,
   orderStatusUpdateSchema,
+  resetPasswordSchema,
   type AdminOrderListQuery,
   type AdminUserDto,
   type CartAddInput,
@@ -31,8 +33,10 @@ import {
   type CheckoutInput,
   type CustomerDto,
   type CustomerRegisterInput,
+  type ForgotPasswordInput,
   type LoginInput,
   type OrderStatusUpdateInput,
+  type ResetPasswordInput,
 } from "@ecom/shared";
 import { cookieOptions, DAY_MS } from "../common/cookies";
 import { ZodValidationPipe } from "../common/zod-validation.pipe";
@@ -85,6 +89,26 @@ export class AccountController {
     @Res({ passthrough: true }) res: Response,
   ) {
     const { token, customer } = await this.customers.login(body);
+    await this.startSession(req, res, token, customer);
+    return customer;
+  }
+
+  @Post("forgot-password")
+  @HttpCode(204)
+  @Throttle({ default: { ttl: 60_000, limit: 5 } })
+  async forgotPassword(@Body(new ZodValidationPipe(forgotPasswordSchema)) body: ForgotPasswordInput) {
+    await this.customers.requestPasswordReset(body.email);
+  }
+
+  @Post("reset-password")
+  @HttpCode(200)
+  @Throttle({ default: { ttl: 60_000, limit: 10 } })
+  async resetPassword(
+    @Body(new ZodValidationPipe(resetPasswordSchema)) body: ResetPasswordInput,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const { token, customer } = await this.customers.resetPassword(body);
     await this.startSession(req, res, token, customer);
     return customer;
   }

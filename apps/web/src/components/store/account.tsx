@@ -3,7 +3,11 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
-import { customerRegisterSchema, type OrderDto, type OrderSummaryDto } from "@ecom/shared";
+import {
+  customerRegisterSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema,
+  type OrderDto, type OrderSummaryDto } from "@ecom/shared";
 import { ApiRequestError } from "@/lib/api-client";
 import { shopApi } from "@/lib/shop-api";
 import { Button, buttonClass } from "@/components/ui/button";
@@ -51,13 +55,7 @@ export function AuthForm({ mode, next }: { mode: "login" | "register"; next?: st
       await Promise.all([refreshCustomer(), refreshCart()]);
       router.replace(target);
     } catch (err) {
-      setFormError(
-        err instanceof ApiRequestError && err.status === 429
-          ? "Too many attempts. Please wait a minute and try again."
-          : err instanceof Error
-            ? err.message
-            : "Something went wrong",
-      );
+      setFormError(errorMessage(err));
       setPending(false);
     }
   };
@@ -92,6 +90,13 @@ export function AuthForm({ mode, next }: { mode: "login" | "register"; next?: st
             onChange={(e) => setPassword(e.target.value)}
           />
         </Field>
+        {!isRegister && (
+          <p className="-mt-2 text-right text-sm">
+            <Link href="/account/forgot-password" className="text-muted-foreground underline hover:text-foreground">
+              Forgot password?
+            </Link>
+          </p>
+        )}
         <Button type="submit" className="w-full" disabled={pending}>
           {pending ? "Please wait…" : isRegister ? "Create account" : "Sign in"}
         </Button>
@@ -102,6 +107,116 @@ export function AuthForm({ mode, next }: { mode: "login" | "register"; next?: st
           {isRegister ? "Sign in" : "Create an account"}
         </Link>
       </p>
+    </Card>
+  );
+}
+
+const errorMessage = (err: unknown) =>
+  err instanceof ApiRequestError && err.status === 429
+    ? "Too many attempts. Please wait a minute and try again."
+    : err instanceof Error
+      ? err.message
+      : "Something went wrong";
+
+export function ForgotPasswordForm() {
+  const [email, setEmail] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+  const [done, setDone] = useState(false);
+
+  const onSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    const parsed = forgotPasswordSchema.safeParse({ email });
+    if (!parsed.success) return setError("Enter the email address you signed up with.");
+    setPending(true);
+    try {
+      await shopApi.forgotPassword(parsed.data.email);
+      setDone(true);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setPending(false);
+    }
+  };
+
+  return (
+    <Card className="mx-auto max-w-md space-y-6">
+      <h1 className="text-2xl font-bold">Reset your password</h1>
+      {done ? (
+        <p role="status" className="text-muted-foreground">
+          If there&apos;s an account for {email}, we&apos;ve emailed it a link to choose a new password. The link expires
+          in one hour.
+        </p>
+      ) : (
+        <form onSubmit={onSubmit} noValidate className="space-y-4">
+          <p className="text-sm text-muted-foreground">Enter your email and we&apos;ll send you a reset link.</p>
+          {error && <Alert>{error}</Alert>}
+          <Field label="Email" htmlFor="email">
+            <Input id="email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+          </Field>
+          <Button type="submit" className="w-full" disabled={pending}>
+            {pending ? "Please wait…" : "Send reset link"}
+          </Button>
+        </form>
+      )}
+      <p className="text-center text-sm text-muted-foreground">
+        <Link href="/account/login" className="underline">
+          Back to sign in
+        </Link>
+      </p>
+    </Card>
+  );
+}
+
+export function ResetPasswordForm({ token }: { token: string }) {
+  const router = useRouter();
+  const { refreshCart, refreshCustomer } = useShop();
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+
+  const onSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    const parsed = resetPasswordSchema.safeParse({ token, password });
+    if (!parsed.success) return setError(parsed.error.issues[0]?.message ?? "Choose a different password.");
+    setPending(true);
+    try {
+      await shopApi.resetPassword(token, password);
+      await Promise.all([refreshCustomer(), refreshCart()]);
+      router.replace("/account");
+    } catch (err) {
+      setError(errorMessage(err));
+      setPending(false);
+    }
+  };
+
+  return (
+    <Card className="mx-auto max-w-md space-y-6">
+      <h1 className="text-2xl font-bold">Choose a new password</h1>
+      {error && (
+        <Alert>
+          {error}{" "}
+          <Link href="/account/forgot-password" className="underline">
+            Request a new link
+          </Link>
+        </Alert>
+      )}
+      <form onSubmit={onSubmit} noValidate className="space-y-4">
+        <Field label="New password" htmlFor="password" hint="At least 8 characters.">
+          <Input
+            id="password"
+            type="password"
+            autoComplete="new-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+        </Field>
+        <Button type="submit" className="w-full" disabled={pending}>
+          {pending ? "Please wait…" : "Save password and sign in"}
+        </Button>
+      </form>
     </Card>
   );
 }

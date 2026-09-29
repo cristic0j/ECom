@@ -6,8 +6,8 @@ export const metadata: Metadata = { title: "Checkout", robots: { index: false } 
 
 export default async function CheckoutPage() {
   await requireCartFeature();
-  const { locale } = await getStore();
+  const { locale, paymentInstructions } = await getStore();
   // "en-US" → "US"; a sensible first guess for the shipping country
   const defaultCountry = locale.split("-")[1]?.toUpperCase() ?? "";
-  return <CheckoutForm defaultCountry={defaultCountry} />;
+  return <CheckoutForm defaultCountry={defaultCountry} paymentInstructions={paymentInstructions} />;
 }

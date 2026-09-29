@@ -10,7 +10,15 @@ import { Alert } from "@/components/ui/misc";
 import { useShop } from "./shop-provider";
 import { OrderDetails } from "./order-details";
 
-export function OrderConfirmation({ number, token }: { number: number; token: string }) {
+export function OrderConfirmation({
+  number,
+  token,
+  paymentInstructions,
+}: {
+  number: number;
+  token: string;
+  paymentInstructions: string;
+}) {
   const { format, customer } = useShop();
   const [order, setOrder] = useState<OrderDto | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -32,10 +40,9 @@ export function OrderConfirmation({ number, token }: { number: number; token: st
           <CheckCircle2 className="size-5" /> Thank you, your order is placed.
         </p>
         <h1 className="text-2xl font-bold">Order #{order.number}</h1>
-        {order.status === "PENDING" && (
-          <p className="max-w-prose text-muted-foreground">
-            We&apos;ll contact you at {order.email} with payment details. Your order ships once payment is received.
-          </p>
+        <p className="max-w-prose text-muted-foreground">We&apos;ve sent a confirmation to {order.email}.</p>
+        {order.status === "PENDING" && paymentInstructions && (
+          <p className="max-w-prose whitespace-pre-line rounded-(--radius) bg-muted p-3 text-sm">{paymentInstructions}</p>
         )}
         <p className="text-sm text-muted-foreground">Keep this page&apos;s link to check your order status later.</p>
       </div>

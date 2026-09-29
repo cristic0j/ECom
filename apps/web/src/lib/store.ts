@@ -14,6 +14,8 @@ export type Store = {
   theme: { primary: string; primaryForeground: string; accent: string; radius: string };
   features: typeof storeConfig.features;
   pageSize: number;
+  /** How to pay while card payments aren't set up; empty = say nothing */
+  paymentInstructions: string;
 };
 
 /** store.config.ts defaults with admin Settings overrides applied. Deduped per request. */
@@ -28,6 +30,7 @@ export const getStore = cache(async (): Promise<Store> => {
     theme: { ...storeConfig.theme, ...overrides.theme },
     features: storeConfig.features,
     pageSize: storeConfig.catalog.pageSize,
+    paymentInstructions: overrides.paymentInstructions ?? storeConfig.paymentInstructions,
   };
 });
 

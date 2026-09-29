@@ -5,6 +5,8 @@ import { hash } from "@node-rs/argon2";
 import { AppModule } from "../src/app.module";
 import { configureApp } from "../src/configure-app";
 import { PrismaService } from "../src/prisma/prisma.service";
+import { EMAIL_PROVIDER, type EmailMessage, type EmailProvider } from "../src/email/email-provider";
+import { EmailService } from "../src/email/email.module";
 
 // 1x1 transparent PNG
 const PNG = Buffer.from(
@@ -17,6 +19,16 @@ describe("API (e2e)", () => {
   let prisma: PrismaService;
   let adminCookie: string[];
   let editorCookie: string[];
+  let emails: EmailService;
+
+  /** Emails the API sent, captured instead of delivered. */
+  const outbox: EmailMessage[] = [];
+  const provider: EmailProvider = { send: async (m) => void outbox.push(m) };
+  /** Waits for background sends, then returns and clears what was sent. */
+  const sent = async () => {
+    await emails.flush();
+    return outbox.splice(0);
+  };
 
   const http = () => request(app.getHttpServer());
 
@@ -40,11 +52,15 @@ describe("API (e2e)", () => {
     if (!process.env.DATABASE_URL?.includes("schema=e2e")) {
       throw new Error("Refusing to run e2e tests outside the e2e schema");
     }
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+      .overrideProvider(EMAIL_PROVIDER)
+      .useValue(provider)
+      .compile();
     app = moduleRef.createNestApplication<NestExpressApplication>();
     configureApp(app);
     await app.init();
     prisma = app.get(PrismaService);
+    emails = app.get(EmailService);
 
     await prisma.$executeRawUnsafe(
       `TRUNCATE "Product", "Category", "AdminUser", "StoreSetting", "Customer", "Cart", "Order" RESTART IDENTITY CASCADE`,
@@ -254,7 +270,11 @@ describe("API (e2e)", () => {
       await http()
         .put("/api/admin/settings")
         .set("Cookie", adminCookie)
-        .send({ currency: "EUR", shipping: { flatRateMinor: 500, freeOverMinor: 10000 } })
+        .send({
+          currency: "EUR",
+          shipping: { flatRateMinor: 500, freeOverMinor: 10000 },
+          paymentInstructions: "Pay to IBAN DE00 1234 within 7 days.",
+        })
         .expect(200);
       product = (await http().post("/api/admin/products").set("Cookie", adminCookie).send(shopBody(2000)).expect(201)).body;
     });
@@ -287,8 +307,18 @@ describe("API (e2e)", () => {
       // Price changes while the item sits in the cart; checkout must use the new price
       await http().put(`/api/admin/products/${product.id}`).set("Cookie", adminCookie).send(shopBody(2500)).expect(200);
 
+      await sent();
       guestOrder = (await guest.post("/api/checkout").send({ email: "Guest@B.dev", shippingAddress: address }).expect(201)).body;
       expect(guestOrder.number).toEqual(expect.any(Number));
+
+      // Confirmation to the customer (with the private order link) and an alert to ADMIN users only
+      const [confirmation, alert, ...rest] = await sent();
+      expect(rest).toHaveLength(0);
+      expect(confirmation).toMatchObject({ to: ["guest@b.dev"], subject: `Order #${guestOrder.number} received` });
+      expect(confirmation.text).toContain(`/order/${guestOrder.number}?token=${guestOrder.accessToken}`);
+      expect(confirmation.text).toContain("Pay to IBAN DE00 1234");
+      expect(confirmation.text).toContain("Total  €55.00");
+      expect(alert).toMatchObject({ to: ["admin@test.dev"], subject: `New order #${guestOrder.number} from guest@b.dev` });
       expect((await guest.get("/api/cart").expect(200)).body.items).toHaveLength(0);
 
       const order = (await http().get(`/api/orders/${guestOrder.number}?token=${guestOrder.accessToken}`).expect(200)).body;
@@ -364,9 +394,16 @@ describe("API (e2e)", () => {
       expect((await http().get("/api/admin/orders?q=shopper").set("Cookie", adminCookie).expect(200)).body.total).toBe(1);
 
       const path = `/api/admin/orders/${guestOrder.number}/status`;
+      await sent();
       await http().patch(path).set("Cookie", adminCookie).send({ status: "FULFILLED" }).expect(409);
+      expect(await sent()).toHaveLength(0);
       await http().patch(path).set("Cookie", adminCookie).send({ status: "PAID", note: "Bank transfer" }).expect(200);
+      const [paid] = await sent();
+      expect(paid).toMatchObject({ to: ["guest@b.dev"], subject: `Payment received for order #${guestOrder.number}` });
+      // The admin's note is internal and isn't sent to the customer
+      expect(paid.text).not.toContain("Bank transfer");
       const order = (await http().patch(path).set("Cookie", editorCookie).send({ status: "FULFILLED" }).expect(200)).body;
+      expect((await sent()).map((m) => m.subject)).toEqual([`Order #${guestOrder.number} has shipped`]);
       expect(order.status).toBe("FULFILLED");
       expect(order.events).toMatchObject([
         { toStatus: "PENDING", actor: "guest" },
@@ -376,6 +413,30 @@ describe("API (e2e)", () => {
 
       const counts = (await http().get("/api/admin/orders/counts").set("Cookie", adminCookie).expect(200)).body;
       expect(counts).toEqual({ FULFILLED: 1, PENDING: 1 });
+    });
+
+    it("resets a customer password with a single-use emailed link", async () => {
+      await sent();
+      // Unknown emails get the same answer and no email
+      await http().post("/api/account/forgot-password").send({ email: "nobody@test.dev" }).expect(204);
+      expect(await sent()).toHaveLength(0);
+
+      await http().post("/api/account/forgot-password").send({ email: "Shopper@Test.dev" }).expect(204);
+      const [mail] = await sent();
+      expect(mail).toMatchObject({ to: ["shopper@test.dev"] });
+      const token = decodeURIComponent(/reset-password\?token=([^\s"&]+)/.exec(mail.text)![1]);
+
+      await http().post("/api/account/reset-password").send({ token, password: "short" }).expect(400);
+      await http().post("/api/account/reset-password").send({ token: "garbage", password: "newpass123" }).expect(400);
+
+      const reset = await http().post("/api/account/reset-password").send({ token, password: "newpass123" }).expect(200);
+      expect(reset.body).toMatchObject({ email: "shopper@test.dev" });
+      expect(reset.get("Set-Cookie")?.join(";")).toMatch(/ecom_customer=.*HttpOnly/i);
+
+      // The link is used up, and only the new password works
+      await http().post("/api/account/reset-password").send({ token, password: "another123" }).expect(400);
+      await http().post("/api/account/login").send({ email: "shopper@test.dev", password: "pass12345" }).expect(401);
+      await http().post("/api/account/login").send({ email: "shopper@test.dev", password: "newpass123" }).expect(200);
     });
   });
 });

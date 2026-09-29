@@ -8,6 +8,7 @@ import { AdminModule } from "./admin/admin.module";
 import { MediaModule } from "./media/media.module";
 import { SettingsModule } from "./settings/settings.module";
 import { CommerceModule } from "./commerce/commerce.module";
+import { EmailModule } from "./email/email.module";
 import { HealthController } from "./health.controller";
 
 @Module({
@@ -19,6 +20,7 @@ import { HealthController } from "./health.controller";
     AdminModule,
     MediaModule,
     SettingsModule,
+    EmailModule,
     CommerceModule,
   ],
   controllers: [HealthController],

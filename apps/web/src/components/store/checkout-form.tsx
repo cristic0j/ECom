@@ -23,7 +23,13 @@ const ADDRESS_FIELDS = [
 
 type AddressField = (typeof ADDRESS_FIELDS)[number][0];
 
-export function CheckoutForm({ defaultCountry }: { defaultCountry: string }) {
+export function CheckoutForm({
+  defaultCountry,
+  paymentInstructions,
+}: {
+  defaultCountry: string;
+  paymentInstructions: string;
+}) {
   const router = useRouter();
   const { cart, customer, format, refreshCart } = useShop();
   // null = not edited yet, so a signed-in customer's email and name show as the default
@@ -146,10 +152,11 @@ export function CheckoutForm({ defaultCountry }: { defaultCountry: string }) {
           ))}
         </ul>
         <OrderTotals {...cart} format={(m) => format(m)} />
-        <div className="rounded-(--radius) bg-muted p-3 text-sm text-muted-foreground">
-          <strong className="text-foreground">Payment:</strong> after you place the order, we&apos;ll contact you with
-          payment details (bank transfer or cash on delivery).
-        </div>
+        {paymentInstructions && (
+          <div className="whitespace-pre-line rounded-(--radius) bg-muted p-3 text-sm text-muted-foreground">
+            <strong className="text-foreground">Payment:</strong> {paymentInstructions}
+          </div>
+        )}
         <Button type="submit" size="lg" className="w-full" disabled={placing}>
           {placing ? "Placing order…" : "Place order"}
         </Button>

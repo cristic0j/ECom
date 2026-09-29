@@ -15,6 +15,16 @@ const schema = z
     S3_ACCESS_KEY: z.string().optional(),
     S3_SECRET_KEY: z.string().optional(),
     S3_PUBLIC_URL: z.string().optional(),
+    /** Public storefront URL, used for links in emails */
+    SITE_URL: z.string().url().default("http://localhost:3000"),
+    EMAIL_DRIVER: z.enum(["console", "resend"]).default("console"),
+    RESEND_API_KEY: z.string().optional(),
+    /** Sender, e.g. "Demo Store <orders@shop.example.com>"; the domain must be verified with the provider */
+    EMAIL_FROM: z.string().default("Store <orders@example.com>"),
+    /** Where replies to store emails go; empty = the sender address */
+    EMAIL_REPLY_TO: z.string().optional(),
+    /** Comma-separated; who gets "new order" alerts. Empty = every ADMIN user */
+    ORDER_NOTIFY_EMAIL: z.string().optional(),
   })
   .refine(
     (e) => e.NODE_ENV !== "production" || (e.JWT_SECRET.length >= 32 && !e.JWT_SECRET.startsWith("change-me")),
@@ -23,6 +33,10 @@ const schema = z
   .refine(
     (e) => e.STORAGE_DRIVER !== "s3" || (e.S3_BUCKET && e.S3_ACCESS_KEY && e.S3_SECRET_KEY && e.S3_PUBLIC_URL),
     "STORAGE_DRIVER=s3 requires S3_BUCKET, S3_ACCESS_KEY, S3_SECRET_KEY and S3_PUBLIC_URL",
+  )
+  .refine(
+    (e) => e.EMAIL_DRIVER !== "resend" || (e.RESEND_API_KEY && !e.EMAIL_FROM.includes("example.com")),
+    "EMAIL_DRIVER=resend requires RESEND_API_KEY and a real EMAIL_FROM address",
   );
 
 const parsed = schema.safeParse(process.env);

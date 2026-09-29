@@ -1,6 +1,6 @@
 # Project Handoff — E-commerce Template
 
-_Last updated: 2026-09-25. Read this first when resuming work._
+_Last updated: 2026-09-27. Read this first when resuming work._
 
 ## Goal
 
@@ -19,28 +19,22 @@ Full original plan: `~/.claude/plans/i-am-planning-to-recursive-shell.md`
 
 ---
 
-## ▶ Where we left off (session 2026-09-25)
+## ▶ Where we left off (session 2026-09-27)
 
-**Done this session** (all committed on `main`):
-- `9bd32ab`: fixed the Playwright run (orphaned dev servers) and committed the web app
-- `d612a26`: finished Phase 1: README, windowed pagination, editor View-link fix, `SEED_DEMO=false`, production `JWT_SECRET` guard
-- `02fb096`: **Phase 2**: customer accounts, cart, checkout, orders, admin Orders (details in "Phase 2: what's done")
-- Verified: root `pnpm dev` starts everything. The store owner clicked through the whole flow in the browser and it works.
+**Done this session:** **order emails** and customer **forgot password** (details in "Order emails: what's done" below). The store owner chose this over Stripe, stock and deploying.
+- Tests: 26 unit, 22 API e2e and 7 Playwright, all green.
+- Checked by hand: `POST /account/forgot-password` prints the reset email in the `pnpm dev` terminal, and the new pages load.
 
-**Next up: the store owner chose to decide at the start of next session.** The recommendation given was:
-1. **Order emails** (small, recommended first):
-   - an `EmailProvider` interface with Resend or Postmark behind it, plus a console/log provider for local dev
-   - emails: order received (customer + store owner), paid, shipped
-   - this also unlocks customer "forgot password"
-   - make the checkout payment instructions a store setting at the same time
-2. **Phase 3: Stripe payments** (see "Next phases" below); it reuses the email layer for receipts
-3. Phase 4: stock management, and/or **deploying online** (Railway/Render + managed Postgres + R2/S3). No host has been chosen yet.
+**Next up (store owner to choose):**
+1. **Phase 3: Stripe payments** (see "Next phases"). The email layer is ready for receipts: when the webhook sets PAID, `EmailService.orderStatusChanged` already sends "Payment received".
+2. Phase 4: stock management.
+3. **Deploying online** (Railway/Render + managed Postgres + R2/S3). No host chosen yet. Emails also need a Resend account and a verified sender domain at that point.
 
-**Open decisions for the store owner:** which to do next (emails / Stripe / stock / deploy), the email provider, and the hosting provider.
+**Open decisions for the store owner:** what comes next, the hosting provider, and the store's email domain (needed for Resend).
 
-**About the store owner:** new to hosting and backend concepts. Explain in plain terms, give a recommendation, and ask before big choices. Earlier questions answered in the session: how the 3 pieces fit together (web → API → database), what changes between local and hosted, and that migrations and the seed must be run (they're not automatic). A later deploy should put them in the host's pre-deploy step.
+**About the store owner:** new to hosting and backend concepts. Explain in plain terms, give a recommendation, and ask before big choices. Earlier questions answered: how the 3 pieces fit together (web → API → database), what changes between local and hosted, and that migrations and the seed must be run (not automatic; a deploy should put them in the host's pre-deploy step).
 
-**State at the end of the session:** `pnpm dev` was left running in the background for manual testing. If ports 3000/4000 are busy next time, stop it: `pkill -f "turbo run dev"`.
+**State at the end of the session:** `pnpm dev` may still be running. If ports 3000/4000 are busy, stop it: `pkill -f "turbo run dev"`.
 
 ---
 
@@ -215,12 +209,32 @@ Phase 2 is built too; see "Phase 2: what's done" below.
   - With `cart: false`, every storefront commerce route and page returns 404 (checked by hand).
 
 **Known gaps / follow-ups:**
-- **No emails.** Customers aren't notified of orders or status changes, and the store owner has to check the admin. The next step is an email provider behind an interface (order confirmation, "paid", "shipped").
-- The payment text at checkout ("we'll contact you with payment details…") is hard-coded; make it a store setting.
-- No password reset for customers (needs email).
+- ~~No emails, hard-coded payment text, no password reset~~: done 2026-09-27 (see "Order emails").
 - Abandoned guest carts are never deleted (`Cart.updatedAt` is indexed for a future cleanup job).
 - Playwright runs leave test orders and customers in the dev DB (`guest-*@example.com`, `shopper-*@example.com`).
 - The order-number sequence is set with `RESTART WITH 1001`, so `TRUNCATE … RESTART IDENTITY` (the API e2e tests) resets it to 1. Harmless.
+
+---
+
+## Order emails: what's done (2026-09-27)
+
+- **`apps/api/src/email/`:**
+  - `email-provider.ts`: `EmailProvider` interface, `ConsoleEmailProvider` (default; prints to the API log) and `ResendEmailProvider` (plain `fetch` to the Resend REST API, no SDK, 10 s timeout). Chosen by `EMAIL_DRIVER`. In production the console driver logs a warning at startup.
+  - `templates.ts`: pure functions that render HTML and plain text from the same blocks; all catalog and customer text is HTML-escaped. There's a unit test in `templates.spec.ts`.
+  - `email.module.ts`: a global `EmailService`. Sends run **in the background**, so a failing provider is only logged and never fails checkout. `flush()` waits for them (used by the e2e tests, which override `EMAIL_PROVIDER` with an in-memory outbox).
+- **Emails:**
+  - checkout → "Order #N received" to the customer (items, totals, address, payment instructions, and the private `/order/N?token=` link), plus a "New order" alert to `ORDER_NOTIFY_EMAIL`, or to every ADMIN user when that's empty
+  - status → PAID / FULFILLED ("has shipped") / CANCELLED / REFUNDED: one customer email per change. **The admin's status note is not included** (it's internal).
+  - Order emails are sent only after the checkout transaction commits.
+- **Forgot password:** `POST account/forgot-password` (always 204, 5/min) and `POST account/reset-password` (sets the password and signs the customer in, merging the guest cart).
+  - The token is a JWT signed with `JWT_SECRET + current passwordHash` and valid for 60 minutes. It stops working once the password changes, so each link works once. There's no token table.
+  - Web pages: `/account/forgot-password`, `/account/reset-password?token=` (sends no referrer), and a "Forgot password?" link on sign in.
+- **Payment instructions** are now a store setting: `storeSettingsSchema.paymentInstructions`, with the default in `store.config.ts`, edited under Admin → Settings → Payment. They're shown at checkout, on the order page (while PENDING) and in the confirmation email. Empty = show nothing.
+- **New env vars** (in `.env.example` and the README): `EMAIL_DRIVER`, `RESEND_API_KEY`, `EMAIL_FROM`, `EMAIL_REPLY_TO`, `ORDER_NOTIFY_EMAIL`. The API now also reads `SITE_URL`, for links in emails.
+- **Follow-ups:**
+  - A password reset doesn't sign out the customer's other existing sessions (the JWTs have no version claim).
+  - There's no way to write a "message to customer" (e.g. a tracking number) on the shipped email.
+  - No Playwright test for the reset flow; the API e2e test covers it.
 
 ---
 
