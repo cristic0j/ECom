@@ -28,7 +28,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSel
   { className, ...props },
   ref,
 ) {
-  return <select ref={ref} className={cn(fieldClass, "h-10", className)} {...props} />;
+  return <select ref={ref} className={cn(fieldClass, "select-chevron h-10", className)} {...props} />;
 });
 
 export function Label({ className, ...props }: LabelHTMLAttributes<HTMLLabelElement>) {

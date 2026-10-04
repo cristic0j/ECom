@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
+import { Save } from "lucide-react";
 import type { StoreSettings } from "@ecom/shared";
 import { storeConfig } from "@store-config";
 import { adminApi } from "@/lib/admin-api";
@@ -96,10 +97,13 @@ export default function SettingsPage() {
     <>
       <form onSubmit={onSubmit}>
         <PageHeader
+          sticky
           title="Store settings"
           actions={
             !readOnly && (
-              <Button type="submit">Save</Button>
+              <Button type="submit" className="min-w-28 shadow-sm">
+                <Save className="size-4" /> Save
+              </Button>
             )
           }
         />

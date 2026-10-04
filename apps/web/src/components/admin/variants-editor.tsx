@@ -155,9 +155,9 @@ export function VariantsEditor({
         )}
       </div>
 
-      <div className="overflow-x-auto">
+      <div className="relative overflow-x-auto">
         <table className="w-full text-sm">
-          <thead className="text-left text-muted-foreground">
+          <thead className="text-left whitespace-nowrap text-muted-foreground">
             <tr>
               <th className="py-2 pr-2 font-medium">Default</th>
               {hasOptions && <th className="py-2 pr-2 font-medium">Variant</th>}
@@ -165,7 +165,7 @@ export function VariantsEditor({
               <th className="py-2 pr-2 font-medium">Price</th>
               <th className="py-2 pr-2 font-medium">Compare at</th>
               <th className="py-2 pr-2 font-medium">Cost</th>
-              <th className="py-2 pr-2 font-medium">In stock</th>
+              <th className="py-2 pr-2 text-center font-medium">In stock</th>
               {hasOptions && (
                 <th className="py-2 font-medium">
                   <span className="sr-only">Remove</span>
@@ -176,16 +176,22 @@ export function VariantsEditor({
           <tbody>
             {rows.map((r, i) => (
               <tr key={r.key} className="align-top">
-                <td className="py-1.5 pr-2 pt-4">
-                  <input
-                    type="radio"
-                    name="default-variant"
-                    aria-label={`Make ${r.title} the default variant`}
-                    checked={r.isDefault}
-                    onChange={() => updateRow(i, { isDefault: true })}
-                  />
+                <td className="py-1.5 pr-2">
+                  <div className="flex h-10 items-center">
+                    <input
+                      type="radio"
+                      name="default-variant"
+                      aria-label={`Make ${r.title} the default variant`}
+                      checked={r.isDefault}
+                      onChange={() => updateRow(i, { isDefault: true })}
+                    />
+                  </div>
                 </td>
-                {hasOptions && <td className="py-1.5 pr-2 pt-3.5 whitespace-nowrap">{r.title}</td>}
+                {hasOptions && (
+                  <td className="py-1.5 pr-2 whitespace-nowrap">
+                    <div className="flex h-10 items-center">{r.title}</div>
+                  </td>
+                )}
                 <td className="py-1.5 pr-2">
                   <Input
                     aria-label={`SKU for ${r.title}`}
@@ -233,13 +239,15 @@ export function VariantsEditor({
                     className="w-24"
                   />
                 </td>
-                <td className="py-1.5 pr-2 pt-4">
-                  <input
-                    type="checkbox"
-                    aria-label={`${r.title} is in stock`}
-                    checked={r.inStock}
-                    onChange={(e) => updateRow(i, { inStock: e.target.checked })}
-                  />
+                <td className="py-1.5 pr-2">
+                  <div className="flex h-10 items-center justify-center">
+                    <input
+                      type="checkbox"
+                      aria-label={`${r.title} is in stock`}
+                      checked={r.inStock}
+                      onChange={(e) => updateRow(i, { inStock: e.target.checked })}
+                    />
+                  </div>
                 </td>
                 {hasOptions && (
                   <td className="py-1.5">

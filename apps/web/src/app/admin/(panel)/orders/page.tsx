@@ -82,7 +82,7 @@ function OrdersTable() {
 
       {error && <Alert className="mb-4">{error}</Alert>}
 
-      <div className="overflow-x-auto rounded-(--radius) border border-border bg-background">
+      <div className="relative overflow-x-auto rounded-(--radius) border border-border bg-background">
         <table className="w-full text-sm">
           <thead className="border-b border-border text-left text-muted-foreground">
             <tr>

@@ -88,13 +88,24 @@ export function AdminShell({ children }: { children: ReactNode }) {
             </button>
           </div>
         </aside>
-        <main className="flex-1 p-4 md:p-8">{children}</main>
+        <main className="min-w-0 flex-1 p-4 md:p-8">{children}</main>
       </div>
     </AdminContext.Provider>
   );
 }
 
-export function PageHeader({ title, actions }: { title: string; actions?: ReactNode }) {
+export function PageHeader({ title, actions, sticky }: { title: string; actions?: ReactNode; sticky?: boolean }) {
+  if (sticky) {
+    // Forms with a Save button: the bar stays in view while scrolling
+    return (
+      <div className="sticky top-3 z-20 mb-6 flex items-center justify-between gap-4 rounded-(--radius) border border-border bg-background/95 px-5 py-3 shadow-sm backdrop-blur">
+        <h1 className="min-w-0 truncate text-xl font-bold" title={title}>
+          {title}
+        </h1>
+        {actions && <div className="flex shrink-0 gap-2">{actions}</div>}
+      </div>
+    );
+  }
   return (
     <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
       <h1 className="text-2xl font-bold">{title}</h1>

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
-import { ExternalLink, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { ExternalLink, Plus, RefreshCw, Save, Trash2 } from "lucide-react";
 import {
   countryName,
   productInputSchema,
@@ -317,6 +317,7 @@ export function ProductEditor({ product }: { product?: AdminProductDto }) {
   return (
     <form onSubmit={onSubmit} noValidate>
       <PageHeader
+        sticky
         title={saved ? saved.title : "New product"}
         actions={
           <>
@@ -325,8 +326,8 @@ export function ProductEditor({ product }: { product?: AdminProductDto }) {
                 <ExternalLink className="size-4" /> View
               </Link>
             )}
-            <Button type="submit" disabled={saving}>
-              {saving ? "Saving…" : "Save"}
+            <Button type="submit" disabled={saving} className="min-w-28 shadow-sm">
+              <Save className="size-4" /> {saving ? "Saving…" : "Save"}
             </Button>
           </>
         }
@@ -345,8 +346,8 @@ export function ProductEditor({ product }: { product?: AdminProductDto }) {
         </p>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
-        <div className="space-y-6">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="min-w-0 space-y-6">
           <Section title="Details">
             <Field label="Title" htmlFor="title" error={errors.title}>
               <Input id="title" value={title} onChange={(e) => onTitle(e.target.value)} required />
@@ -414,7 +415,7 @@ export function ProductEditor({ product }: { product?: AdminProductDto }) {
           </Section>
         </div>
 
-        <div className="space-y-6">
+        <div className="min-w-0 space-y-6">
           <Section title="Status">
             <Select aria-label="Status" value={status} onChange={(e) => setStatus(e.target.value as ProductStatus)}>
               <option value="DRAFT">Draft (hidden)</option>

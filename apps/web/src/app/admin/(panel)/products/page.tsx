@@ -115,7 +115,7 @@ function ProductsTable() {
 
       {error && <Alert className="mb-4">{error}</Alert>}
 
-      <div className="overflow-x-auto rounded-(--radius) border border-border bg-background">
+      <div className="relative overflow-x-auto rounded-(--radius) border border-border bg-background">
         <table className="w-full text-sm">
           <thead className="border-b border-border text-left text-muted-foreground">
             <tr>
@@ -153,12 +153,14 @@ function ProductsTable() {
                   </Link>
                 </td>
                 <td className="p-3">
-                  <Badge tone={STATUS_TONE[p.status]}>{p.status.toLowerCase()}</Badge>
-                  {p.stock !== "in" && (
-                    <Badge tone="warning" className="ml-2">
-                      {p.stock === "out" ? "sold out" : "partly out of stock"}
-                    </Badge>
-                  )}
+                  <div className="flex flex-col items-start gap-1">
+                    <Badge tone={STATUS_TONE[p.status]}>{p.status.toLowerCase()}</Badge>
+                    {p.stock !== "in" && (
+                      <Badge tone="warning" className="whitespace-nowrap">
+                        {p.stock === "out" ? "sold out" : "partly out of stock"}
+                      </Badge>
+                    )}
+                  </div>
                 </td>
                 <td className="p-3 text-right tabular-nums">{format(p.priceMinor)}</td>
                 <td className="p-3 text-right">
