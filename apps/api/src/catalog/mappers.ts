@@ -54,6 +54,7 @@ export function toProductDto(p: ProductDetail): ProductDto {
     categories: p.categories.map(({ category: c }) => ({ id: c.id, slug: c.slug, name: c.name })),
     variants: p.variants.map(toVariantDto),
     images: p.images.map(toImageDto),
+    notDeliveredTo: p.notDeliveredTo,
     createdAt: p.createdAt.toISOString(),
     updatedAt: p.updatedAt.toISOString(),
   };

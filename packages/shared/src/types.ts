@@ -52,6 +52,8 @@ export interface ProductDto {
   categories: Pick<CategoryDto, "id" | "slug" | "name">[];
   variants: VariantDto[];
   images: ImageDto[];
+  /** Countries this product can't be delivered to */
+  notDeliveredTo: string[];
   createdAt: string;
   updatedAt: string;
 }
@@ -79,6 +81,8 @@ export interface SupplierProductInfo {
   productId: string;
   url: string;
   importedAt: string;
+  /** Last "Re-check on AliExpress"; absent until the first one */
+  checkedAt?: string;
   countries: SupplierCountryInfo[];
 }
 
@@ -132,6 +136,8 @@ export interface CartItemDto {
   image: ImageDto | null;
   /** Out-of-stock lines stay in the cart but aren't counted in the totals and block checkout */
   inStock: boolean;
+  /** Countries this item can't be delivered to; checkout blocks them */
+  notDeliveredTo: string[];
 }
 
 export interface CartDto {

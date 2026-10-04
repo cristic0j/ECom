@@ -33,6 +33,9 @@ export const storeConfig = {
     flatRateMinor: 499 as number,
     // Orders at or above this subtotal ship free; null = never free
     freeOverMinor: 5000 as number | null,
+    // Countries the store delivers to (2-letter codes). Checkout offers only these, and AliExpress
+    // imports are checked for them. Editable in admin → Settings → Shipping.
+    countries: ["NL", "DE", "FR", "ES", "IT", "US"] as string[],
   },
   // Shown when card payments are off and orders are paid by hand. Editable in admin → Settings.
   paymentInstructions:

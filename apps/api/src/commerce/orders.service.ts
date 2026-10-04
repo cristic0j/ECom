@@ -3,6 +3,7 @@ import { timingSafeEqual } from "node:crypto";
 import type { Prisma } from "@ecom/db";
 import {
   computeTotals,
+  countryName,
   type AdminOrderListQuery,
   type CheckoutInput,
   type CheckoutResultDto,
@@ -39,6 +40,10 @@ export class OrdersService {
    */
   async checkout(owner: CartOwner, input: CheckoutInput, customer?: CustomerDto): Promise<CheckoutResultDto> {
     const { currency, shipping } = await this.settings.commerce();
+    const { country } = input.shippingAddress;
+    if (!shipping.countries.includes(country)) {
+      throw new BadRequestException(`Sorry, we don't deliver to ${countryName(country)}`);
+    }
 
     const result = await this.prisma.$transaction(async (tx) => {
       const found = await this.carts.find(owner, tx);
@@ -52,6 +57,11 @@ export class OrdersService {
       if (unavailable.length) {
         const names = unavailable.map((l) => l.variant.product.title).join(", ");
         throw new ConflictException(`Out of stock or no longer available: ${names}. Remove it from your cart to continue.`);
+      }
+      const undeliverable = cart.items.filter((l) => l.variant.product.notDeliveredTo.includes(country));
+      if (undeliverable.length) {
+        const names = [...new Set(undeliverable.map((l) => l.variant.product.title))].join(", ");
+        throw new ConflictException(`${names} can't be delivered to ${countryName(country)}. Remove it from your cart to continue.`);
       }
 
       const lines = cart.items.map((l) => ({

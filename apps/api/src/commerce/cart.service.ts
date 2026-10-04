@@ -176,5 +176,6 @@ function toCartItemDto(line: CartLine): CartItemDto {
     lineTotalMinor: variant.priceMinor * line.quantity,
     image: image ? { id: image.id, url: image.url, alt: image.alt, variantId: image.variantId } : null,
     inStock: variant.inStock,
+    notDeliveredTo: variant.product.notDeliveredTo,
   };
 }

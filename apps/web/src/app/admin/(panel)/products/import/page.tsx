@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 import type { SupplierConnectionDto } from "@ecom/shared";
+import { storeConfig } from "@store-config";
 import { adminApi } from "@/lib/admin-api";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/form";
@@ -20,10 +21,10 @@ export default function ImportProductPage() {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    Promise.all([adminApi.aliexpressStatus(), adminApi.aliexpressSettings()])
+    Promise.all([adminApi.aliexpressStatus(), adminApi.getSettings()])
       .then(([s, settings]) => {
         setStatus(s);
-        setCountries(settings.countries);
+        setCountries(settings.shipping?.countries ?? storeConfig.shipping.countries);
       })
       .catch((e) => setError(e.message));
   }, []);
@@ -76,7 +77,7 @@ export default function ImportProductPage() {
               />
             </Field>
             <p className="text-xs text-muted-foreground">
-              Cost and delivery time are checked for {countries.join(", ")} (
+              Cost and delivery time are checked for the countries you deliver to: {countries.join(", ")} (
               <Link href="/admin/settings" className="underline">
                 change
               </Link>

@@ -14,58 +14,55 @@ The work is split into four phases:
 | 2 | Customer accounts, cart, checkout, orders | ✅ done (2026-09-25) |
 | 3 | Payments (Stripe, via a provider interface) | ✅ done (2026-09-29) |
 | 4 | Stock management (per-variant inventory) | ⏸ not needed for this store (dropshipping); lighter version done, see below |
-| — | AliExpress supplier integration | 🚧 in progress: "Connect AliExpress" done and committed (2026-10-04); search/import next |
+| — | AliExpress supplier integration | 🚧 in progress: connect, import by link, costs and delivery countries done (2026-10-04); search, orders and tracking next |
 
 Full original plan: `~/.claude/plans/i-am-planning-to-recursive-shell.md`
 
 ---
 
-## ▶ Where we left off (sessions 2026-09-29 evening and 2026-10-04): AliExpress
+## ▶ Where we left off (session 2026-10-04): AliExpress connect, import and delivery countries
 
-**Supplier chosen: AliExpress.** The store owner registered on the AliExpress Open Platform and got a **Dropshipping** app approved. The keys are in `.env` (`ALIEXPRESS_APP_KEY`, `ALIEXPRESS_APP_SECRET`), and they work: a signed token request to the real AliExpress returned only `InvalidCode` for a fake code. The console's Callback URL is `https://example.com/api/admin/aliexpress/callback` (it must be https, so localhost was rejected), and the same value is in `.env` as `ALIEXPRESS_CALLBACK_URL`.
+**Supplier: AliExpress.** The owner's Open Platform app is type **Dropshipping**, status **Test**, API groups **System Tool** + **AliExpress-dropship** (no Affiliate, and none needed: see the API notes below). Keys are in `.env` (`ALIEXPRESS_APP_KEY`, `ALIEXPRESS_APP_SECRET`). The console's Callback URL is `https://example.com/api/admin/aliexpress/callback` (https only, so localhost is rejected), and the same value is in `ALIEXPRESS_CALLBACK_URL`. **The owner's real account is connected** (`nl4196393399tchae`), using the paste-the-address flow. AliExpress's sign-in page says "Buyer login" / "Authorize" (tick the terms box first).
 
-**What we learned about the AliExpress API** (explained to the store owner):
-- Dropshipping API: product details (`aliexpress.ds.product.get`), shipping options (`aliexpress.ds.shipping.info`), create order (`aliexpress.ds.order.create`), order status and tracking.
-- **Orders can't be paid through the API.** They land in the AliExpress account as "Awaiting payment" and the owner pays them there ("Pay all orders"), within a few days or they're cancelled. The owner pays AliExpress by card; the Stripe payouts cover it later.
-- Search with filters by category, price, ship-to country, delivery days (3/5/7/10) and sort by sales or price is `aliexpress.affiliate.product.query` (plus `hotproduct.query` and a category list call). That's the **Affiliates** API. It may need a second app of type Affiliates if the Dropshipping app doesn't include it. **Still waiting on the owner for the list of API groups their app has** (in the console, under API permissions).
-- Signing: HMAC-SHA256 of the sorted key+value pairs, uppercase hex. System calls (`/rest/auth/token/create`, `/rest/auth/token/refresh`) put the path in front; business calls (`/sync?method=…`) don't. Gateway: `https://api-sg.aliexpress.com`.
+**Done this session (all committed; tests: 59 unit, 48 API e2e, 8 Playwright + 1 skipped, all green):**
+1. **Connect AliExpress** finished: formatting cleanup, eslint fix, README → AliExpress (`b1cf9f4`). The suppliers code is described under "Connect AliExpress" below.
+2. **Import by link** (`fa2a98b`): Admin → Products → "Import from AliExpress" (`app/admin/(panel)/products/import`) → `POST admin/aliexpress/import {url}` creates a **DRAFT** and opens it in the normal editor, where everything is editable.
+   - `suppliers/aliexpress-product.ts` (pure, unit-tested): `parseProductId` (item links on any AliExpress host, or a bare id; short share links are followed in the service, AliExpress hosts only), `buildImport`, `skuFacts`, `countryTable`, `htmlToText`, `suggestedPrice` (cost × 2.5 rounded up to .99).
+   - One option per SKU. "Ships From" is dropped (the in-stock, cheapest warehouse is kept). Repeated value names get numbered ("Black (2)"). SKU = `AE-<sku_id>`. Cost = the **highest** over the store's countries.
+   - Photos are downloaded (only `alicdn.com` / `aliexpress-media.com`, magic bytes checked through `media/image-types.ts`) into the normal storage. Option photos are linked to their variant.
+   - DB (migration `supplier_products`): `Product.supplier` / `supplierProductId` (unique together, so re-importing → 409) / `supplierData` JSON (url, importedAt, checkedAt, per-country table); `ProductVariant.costMinor` / `supplierSkuId` (kept through renames, since PUT matches variants by id).
+   - **Admin-only:** `AdminProductDto` / `toAdminProductDto` (used by every admin products route) adds costs and supplier info. The public `ProductDto` never includes them (tested).
+   - Editor: **Cost** column with profit/loss under the price, an "AliExpress" box (link + country table), and "Not linked to AliExpress" on hand-added options of imported products.
+   - Per-country lookups: any `rsp_code` other than 200 (605 ITEM_ID_NOT_FOUND, 482 SHIP_TO_COUNTRY_PROHIBITED, …) means "not sold there". The import fails only when no country sells it. At most 5 lookups at a time.
+3. **Delivery countries** (this commit):
+   - `storeSettingsSchema.shipping.countries` (default in `store.config.ts`: NL, DE, FR, ES, IT, US; edited in Settings → Shipping). It's **the one list** for checkout and for import checks; the earlier separate "AliExpress import countries" setting was removed.
+   - `Product.notDeliveredTo String[]` (migration `product_delivery_countries`): in the public `ProductDto` and `CartItemDto`.
+   - Checkout: the country is a dropdown of the store's countries. The API returns 400 "Sorry, we don't deliver to X" and 409 "<titles> can't be delivered to X. Remove it…". The form lists blocked items with a Remove button and disables submit.
+   - Product page: "Delivers to: …" only when the product skips some store countries.
+   - Editor "Delivery" box: a tick per store country. Countries AliExpress won't ship to are **locked** (disabled, "AliExpress doesn't ship here"), and the API enforces it on save (`supplierBlocked` / `withSupplierBlocks`).
+   - **"Re-check on AliExpress"** (`POST admin/aliexpress/products/:id/recheck`, ADMIN): refreshes the country table, `notDeliveredTo` (keeping the owner's own blocks), and each linked option's cost and stock (an SKU AliExpress no longer lists → out of stock). Names, photos and prices stay.
+   - `countryName()` is in `packages/shared/src/countries.ts`. `computeTotals` takes only flatRate/freeOver.
+- Dev data: the demo T-shirt variants were set back to in stock (the owner had switched them off). An imported earbuds draft exists (`/admin/products/cmuu1ocob00000qkinfeaic0t`; Germany is blocked because the seller doesn't ship there).
 
-**Built 2026-09-29:** "Connect AliExpress", step 1 of the supplier plan.
-- DB: migration `supplier_connection`, model `SupplierConnection` (one row per supplier; tokens are AES-256-GCM encrypted with a key derived from `JWT_SECRET`).
-- API `apps/api/src/suppliers/`:
-  - `aliexpress-client.ts`: signing, authorize URL, create/refresh token; `ALIEXPRESS_CLIENT` token
-  - `create-client.ts`: returns null without keys
-  - `token-crypto.ts`
-  - `authorization-input.ts`: takes the code and state from a pasted address
-  - `aliexpress.service.ts`: status, connect, disconnect, and `accessToken()`, which renews when under an hour is left, with one refresh at a time
-  - `suppliers.module.ts`: routes `GET/DELETE admin/aliexpress`, `POST admin/aliexpress/authorize`, `POST admin/aliexpress/connect` and `GET admin/aliexpress/callback`. All are ADMIN-only; the state is a 15-minute JWT tied to the admin.
-  - Registered in `app.module.ts`, with the env vars in `config/env.ts` and `.env.example`.
-- Shared: `supplierConnectSchema`, `SupplierConnectionDto`.
-- Web: `components/admin/aliexpress-connection.tsx` (the card in Admin → Settings: Connect opens AliExpress in a new tab, and you paste the address you land on back into the card), plus `adminApi.aliexpress*` in `lib/admin-api.ts`.
-- Tests: 42 unit (10 new, `suppliers/aliexpress.spec.ts`) and 39 API e2e (9 new, `test/aliexpress.e2e-spec.ts`, using a fake client), all passing. The existing e2e test "media › rejects a non-image disguised as PNG" failed once in 5 runs (flaky, not related).
+**⚠ Token lifetimes (Test status):** the access token lasts 1 day and the refresh token 2 days. **A refresh does NOT extend the refresh token** (tested with a real refresh), so the owner must reconnect every 2 days. Probably longer once the app goes online (submit it for review in the console). Not verified. Before automatic orders or background re-checks: get longer tokens, and alert the admin before the connection runs out.
 
-**Finished on 2026-10-04 (committed):**
-- Undid the accidental Prettier reformatting; only the real changes are left in `settings/page.tsx` and `admin-api.ts`. `aliexpress-connection.tsx` reflowed to 120 columns. Its effect no longer calls setState synchronously (eslint `react-hooks/set-state-in-effect`): the `?aliexpress=` callback result is applied in the status fetch's `.then`.
-- eslint, `tsc` and `next build` pass. README → "AliExpress" section added (plus the env table row).
-- **The owner connected the real account in the browser** (paste-the-address flow): account `nl4196393399tchae`. AliExpress's sign-in page says "Buyer login" / "Authorize" (tick the terms box first), not "Allow".
-- Playwright: 6 pass, 1 skipped, **2 fail because of dev data**: 5 of the 6 demo T-shirt variants (`TEE-*`, all but `TEE-B-L`) are marked out of stock in the dev DB (probably the owner trying the In stock switch). Both tests need White/L. **Asked the owner whether to switch them back; no answer yet.**
+**AliExpress API notes** (from live read-only calls; gateway `https://api-sg.aliexpress.com`; HMAC-SHA256 over the sorted key+value pairs, uppercase hex; system calls `/rest/auth/token/*` sign with the path in front, business calls go to `/sync` without it; the client's `call()` returns the `<method>_response` body and throws on `error_response`):
+- `aliexpress.ds.product.get` (`product_id`, `ship_to_country`, `target_currency`, `target_language=en`) → `rsp_code` 200. Prices differ per country (EU includes VAT: the earbuds were €4.69 NL vs €3.22 US).
+- `aliexpress.ds.text.search` (`keyWord`, `local=en_US`, `countryCode`, `currency`, `pageSize`, `pageIndex`, `sortBy=orders,desc`, optional `categoryId`) → code `"00"`; items have `itemId`, `title`, `itemMainPic`, `targetSalePrice`, `orders`, `score`.
+- `aliexpress.ds.category.get` (548 categories with parents), `aliexpress.ds.feedname.get` (123 curated feeds).
+- Orders can't be paid through the API: they wait in the AliExpress account as "Awaiting payment", and the owner pays them there.
 
-**⚠ Token lifetimes are short:** the access token lasts 1 day and the refresh token 2 days (`accessExpiresAt` / `refreshExpiresAt`). `accessToken()` only refreshes on demand, so if nothing calls AliExpress for 2 days the card shows "Needs reconnecting". **Tested 2026-10-04: a refresh does NOT extend it.** One real refresh (run through `AliExpressService.refresh` from a script) gave a new 1-day access token, but `refreshExpiresAt` stayed the same (2 days after connecting). So right now the owner must reconnect every 2 days, which is fine for development but not for automatic orders. Likely because the app is still in test status; the owner is to check the app's status and any token validity setting in the console. Before automatic orders: get longer tokens, and alert the admin (dashboard and/or email) before the connection runs out.
+**Next steps (agreed order):**
+1. **Search page** in the admin (`ds.text.search` + categories, sorted by sales/price, with delivery days), reusing Import.
+2. **Send paid orders to AliExpress** (`aliexpress.ds.order.create`, using `supplierSkuId` and the order's address); the owner pays on AliExpress. Re-check availability for the customer's country at that point. Needs the connection-lifetime fix first.
+3. **Tracking sync** into `trackingNumber` / `trackingUrl` (the email already exists).
+- Later: an automatic daily re-check (needs long-lived tokens), $ prices for the US (the store has one currency), a Playwright test for the delivery block (the API e2e covers it).
+- Before going live: set the Callback URL to `https://<domain>/api/admin/aliexpress/callback` (console + `.env`), and submit the app for review.
 
-**App permissions checked 2026-10-04:** status **Test**; API groups **System Tool** + **AliExpress-dropship** (no Affiliate). Live read-only calls (script: Nest app context from `dist`, `signParams` without a path, POST to `/sync`) showed everything needed works without an Affiliates app:
-- `aliexpress.ds.text.search` (`keyWord`, `local=en_US`, `countryCode=NL`, `currency=EUR`, `pageSize`, `pageIndex`, `sortBy=orders,desc`, optional `categoryId`): returns `itemId`, `title`, `itemMainPic`, `targetSalePrice` (EUR), `orders` ("10,000+"), `score`, `evaluateRate`. Code `"00"` = OK.
-- `aliexpress.ds.category.get`: 548 categories with `parent_category_id`.
-- `aliexpress.ds.feedname.get`: 123 curated feeds (e.g. bestsellers).
-- `aliexpress.ds.product.get` (`product_id`, `ship_to_country`, `target_currency=EUR`, `target_language=en`): `ae_item_base_info_dto` (subject, HTML `detail`), `ae_multimedia_info_dto.image_urls` (`;`-separated), `ae_item_sku_info_dtos.ae_item_sku_info_d_t_o[]` (sku_id, `offer_sale_price` in EUR, `sku_available_stock`, `ae_sku_property_dtos` for option names/values; two SKUs can share a value name, so dedupe by `sku_property_value`/id), `logistics_info_dto.delivery_time`. `rsp_code` 200 = OK.
-- The owner agreed to build **import by link first**, then the search page (which is possible with the DS app, so no second app is needed).
-
-**Next steps after that (the owner agreed to this order):**
-1. Search and import in the admin (category, price, delivery days, ship-to, sort by sales), where Import fills in the product editor. Needs the owner's API group list first; add a `call(method, params, session)` to the client for `/sync`.
-2. A cost price for each product (the AliExpress cost), so the admin can show profit.
-3. Send paid orders to AliExpress automatically (`aliexpress.ds.order.create`); the owner pays them on AliExpress.
-4. Tracking sync: fill in `trackingNumber`/`trackingUrl` automatically (the email already exists).
-- Optional: a "copy order" view for placing orders by hand.
-- Before going live: change the Callback URL (console and `.env`) to `https://<domain>/api/admin/aliexpress/callback`; then the redirect connects on its own.
+### Connect AliExpress (built 2026-09-29, finished 2026-10-04)
+- DB: `SupplierConnection` (one row per supplier; tokens AES-256-GCM encrypted with a key derived from `JWT_SECRET`, so changing the secret means reconnecting).
+- `apps/api/src/suppliers/`: `aliexpress-client.ts` (signing, OAuth, `call`, `fetchImage`; interface `AliExpressApi`, swapped for `test/fake-aliexpress.ts` in e2e), `create-client.ts` (null without keys), `token-crypto.ts`, `authorization-input.ts`, `aliexpress.service.ts` (status/connect/disconnect, `accessToken()` renews when under an hour is left, one refresh at a time), `aliexpress-import.service.ts`, `suppliers.module.ts` (all routes ADMIN-only under `admin/aliexpress`; the OAuth state is a 15-minute JWT tied to the admin).
+- Web: `components/admin/aliexpress-connection.tsx` (Settings card: Connect opens AliExpress in a new tab; paste the address you land on back into the card).
 
 ## Earlier on 2026-09-29
 

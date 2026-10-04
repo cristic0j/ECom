@@ -6,7 +6,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { checkoutSchema } from "@ecom/shared";
 import { shopApi } from "@/lib/shop-api";
 import { buttonClass, Button } from "@/components/ui/button";
-import { Field, Input, Textarea } from "@/components/ui/form";
+import { Field, Input, Select, Textarea } from "@/components/ui/form";
 import { Alert, Card } from "@/components/ui/misc";
 import { useShop } from "./shop-provider";
 import { OrderTotals } from "./order-totals";
@@ -17,24 +17,28 @@ const ADDRESS_FIELDS = [
   ["line2", "Apartment, suite, etc. (optional)", "address-line2"],
   ["city", "City", "address-level2"],
   ["postalCode", "Postal code", "postal-code"],
-  ["country", "Country code (e.g. DE)", "country"],
+  ["country", "Country", "country"],
   ["phone", "Phone (optional)", "tel"],
 ] as const;
 
 type AddressField = (typeof ADDRESS_FIELDS)[number][0];
 
 export function CheckoutForm({
+  countries,
   defaultCountry,
   paymentInstructions,
   cardPayments,
 }: {
+  /** The countries the store delivers to, sorted by name */
+  countries: { code: string; name: string }[];
+  /** Preselected country; empty = the customer picks one */
   defaultCountry: string;
   paymentInstructions: string;
   /** Card payments on: after placing the order the customer is sent to the payment page */
   cardPayments: boolean;
 }) {
   const router = useRouter();
-  const { cart, customer, format, refreshCart } = useShop();
+  const { cart, customer, format, refreshCart, setCart } = useShop();
   // null = not edited yet, so a signed-in customer's email and name show as the default
   const [emailInput, setEmailInput] = useState<string | null>(null);
   const [nameInput, setNameInput] = useState<string | null>(null);
@@ -79,6 +83,16 @@ export function CheckoutForm({
   }
 
   const outOfStock = cart.items.filter((i) => !i.inStock);
+  const country = countries.find((c) => c.code === address.country);
+  const undeliverable = country ? cart.items.filter((i) => i.notDeliveredTo.includes(country.code)) : [];
+
+  const remove = async (itemId: string) => {
+    try {
+      setCart(await shopApi.removeItem(itemId));
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : "Couldn't remove the item");
+    }
+  };
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -150,17 +164,53 @@ export function CheckoutForm({
             {ADDRESS_FIELDS.map(([key, label, autoComplete]) => (
               <div key={key} className={key === "line1" || key === "line2" || key === "name" ? "sm:col-span-2" : undefined}>
                 <Field label={label} htmlFor={`addr-${key}`} error={errors[key]}>
-                  <Input
-                    id={`addr-${key}`}
-                    autoComplete={autoComplete}
-                    value={address[key]}
-                    maxLength={key === "country" ? 2 : undefined}
-                    onChange={(e) => setField(key, e.target.value)}
-                  />
+                  {key === "country" ? (
+                    <Select
+                      id="addr-country"
+                      autoComplete={autoComplete}
+                      value={address.country}
+                      onChange={(e) => setField("country", e.target.value)}
+                    >
+                      {!address.country && <option value="">Choose a country…</option>}
+                      {countries.map((c) => (
+                        <option key={c.code} value={c.code}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </Select>
+                  ) : (
+                    <Input
+                      id={`addr-${key}`}
+                      autoComplete={autoComplete}
+                      value={address[key]}
+                      onChange={(e) => setField(key, e.target.value)}
+                    />
+                  )}
                 </Field>
               </div>
             ))}
           </div>
+          {undeliverable.length > 0 && (
+            <Alert>
+              <p>
+                {undeliverable.length === 1 ? "This item" : "These items"} can&apos;t be delivered to {country!.name}.
+                Remove {undeliverable.length === 1 ? "it" : "them"} to continue, or choose another country.
+              </p>
+              <ul className="mt-2 space-y-1">
+                {undeliverable.map((i) => (
+                  <li key={i.id} className="flex items-center justify-between gap-4">
+                    <span>
+                      {i.productTitle}
+                      {i.variantTitle !== "Default" && ` (${i.variantTitle})`}
+                    </span>
+                    <Button size="sm" variant="secondary" onClick={() => remove(i.id)}>
+                      Remove
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            </Alert>
+          )}
         </Card>
 
         <Card className="space-y-4">
@@ -193,7 +243,7 @@ export function CheckoutForm({
             </div>
           )
         )}
-        <Button type="submit" size="lg" className="w-full" disabled={placing || outOfStock.length > 0}>
+        <Button type="submit" size="lg" className="w-full" disabled={placing || outOfStock.length > 0 || undeliverable.length > 0}>
           {cardPayments
             ? placing
               ? "Opening payment page…"

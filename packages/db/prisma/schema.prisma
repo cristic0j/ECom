@@ -49,6 +49,8 @@ model Product {
   supplierProductId String?
   /// Admin-only supplier details (link, cost and delivery per country); never sent to the storefront
   supplierData      Json?
+  /// Countries (ISO alpha-2) this product can't be delivered to, e.g. the supplier doesn't ship there
+  notDeliveredTo    String[]          @default([])
   variants    ProductVariant[]
   images      ProductImage[]
   categories  ProductCategory[]

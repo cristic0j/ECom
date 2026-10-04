@@ -6,6 +6,7 @@ import { AppModule } from "../src/app.module";
 import { configureApp } from "../src/configure-app";
 import { PrismaService } from "../src/prisma/prisma.service";
 import { ALIEXPRESS_CLIENT } from "../src/suppliers/aliexpress-client";
+import { PAYMENT_PROVIDER } from "../src/payments/payment-provider";
 import type { DsProductResponse } from "../src/suppliers/aliexpress-product";
 import { FakeAliExpress } from "./fake-aliexpress";
 
@@ -61,6 +62,9 @@ describe("AliExpress import (e2e)", () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(ALIEXPRESS_CLIENT)
       .useValue(fake)
+      // Manual payment, so checkouts here don't open payment pages
+      .overrideProvider(PAYMENT_PROVIDER)
+      .useValue(null)
       .compile();
     app = moduleRef.createNestApplication<NestExpressApplication>({ rawBody: true });
     configureApp(app);
@@ -91,22 +95,18 @@ describe("AliExpress import (e2e)", () => {
     await app.close();
   });
 
-  it("keeps the import countries in admin-only settings", async () => {
-    await http().get("/api/admin/aliexpress/settings").set("Cookie", editorCookie).expect(403);
-    const defaults = await http().get("/api/admin/aliexpress/settings").set("Cookie", adminCookie).expect(200);
-    expect(defaults.body).toEqual({ countries: ["NL", "DE", "FR", "ES", "IT", "US"] });
-
-    await http().put("/api/admin/aliexpress/settings").set("Cookie", adminCookie).send({ countries: [] }).expect(400);
-    await http().put("/api/admin/aliexpress/settings").set("Cookie", adminCookie).send({ countries: ["Netherlands"] }).expect(400);
-    const saved = await http()
-      .put("/api/admin/aliexpress/settings")
-      .set("Cookie", adminCookie)
-      .send({ countries: ["nl", "US", "de", "NL"] })
-      .expect(200);
-    expect(saved.body).toEqual({ countries: ["NL", "US", "DE"] });
-
+  it("checks imports for the countries the store delivers to", async () => {
     const store = await http().get("/api/settings").expect(200);
-    expect(JSON.stringify(store.body)).not.toMatch(/aliexpress|countries/i);
+    expect(store.body.shipping?.countries).toBeUndefined(); // store.config.ts default until changed
+
+    await http().put("/api/admin/settings").set("Cookie", adminCookie).send({ shipping: { countries: [] } }).expect(400);
+    await http().put("/api/admin/settings").set("Cookie", adminCookie).send({ shipping: { countries: ["Netherlands"] } }).expect(400);
+    const saved = await http()
+      .put("/api/admin/settings")
+      .set("Cookie", adminCookie)
+      .send({ shipping: { countries: ["nl", "US", "de", "NL"] } })
+      .expect(200);
+    expect(saved.body.shipping).toMatchObject({ countries: ["NL", "US", "DE"] });
   });
 
   it("needs a connected account", async () => {
@@ -129,6 +129,7 @@ describe("AliExpress import (e2e)", () => {
       title: "Bone Conduction Earphones",
       slug: "bone-conduction-earphones",
       status: "DRAFT",
+      notDeliveredTo: ["DE"],
       description: "Long battery\nClear sound",
       attributes: { "Brand Name": "STTK" },
       supplier: {
@@ -180,6 +181,8 @@ describe("AliExpress import (e2e)", () => {
         slug: "bone-earphones",
         title: "Bone Earphones",
         status: "ACTIVE",
+        // The owner blocks the US; Germany stays blocked because AliExpress doesn't ship there
+        notDeliveredTo: ["US"],
         variants: [
           { id: pink.id, sku: pink.sku, title: "Rose", options: { Color: "Rose" }, priceMinor: 1495, costMinor: 480, isDefault: true },
           { id: black.id, sku: black.sku, title: "Graphite", options: { Color: "Graphite" }, priceMinor: 1495 },
@@ -193,6 +196,7 @@ describe("AliExpress import (e2e)", () => {
       ["White", null, null],
     ]);
     expect(res.body.supplier.productId).toBe("1005001");
+    expect(res.body.notDeliveredTo).toEqual(["US", "DE"]);
   });
 
   it("never shows costs or the supplier on the storefront", async () => {
@@ -200,6 +204,45 @@ describe("AliExpress import (e2e)", () => {
     expect(res.body.title).toBe("Bone Earphones");
     const body = JSON.stringify(res.body);
     expect(body).not.toMatch(/costMinor|supplier|aliexpress|1005001/i);
+  });
+
+  it("checkout only delivers to the store's countries, and blocks products that can't go there", async () => {
+    const product = await http().get("/api/catalog/products/bone-earphones").expect(200);
+    expect(product.body.notDeliveredTo).toEqual(["US", "DE"]);
+
+    const guest = request.agent(app.getHttpServer());
+    const cart = await guest.post("/api/cart/items").send({ variantId: product.body.variants[0].id }).expect(201);
+    expect(cart.body.items[0].notDeliveredTo).toEqual(["US", "DE"]);
+
+    const address = (country: string) => ({ name: "Ada Buyer", line1: "1 Main St", city: "Town", postalCode: "1234", country });
+    const japan = await guest.post("/api/checkout").send({ email: "a@b.dev", shippingAddress: address("JP") }).expect(400);
+    expect(japan.body.message).toBe("Sorry, we don't deliver to Japan");
+    const germany = await guest.post("/api/checkout").send({ email: "a@b.dev", shippingAddress: address("DE") }).expect(409);
+    expect(germany.body.message).toBe("Bone Earphones can't be delivered to Germany. Remove it from your cart to continue.");
+    await guest.post("/api/checkout").send({ email: "a@b.dev", shippingAddress: address("nl") }).expect(201);
+  });
+
+  it("re-checks a product: new country table, costs and stock; the owner's names, prices and own blocks stay", async () => {
+    fake.products["1005001"] = {
+      NL: answer([["s1", "4.99", 0]], 8),
+      US: answer([["s1", "3.50", 5]], 12),
+      DE: answer([["s1", "4.79", 3]], 9),
+    };
+    const res = await http().post(`/api/admin/aliexpress/products/${imported.id}/recheck`).set("Cookie", adminCookie).expect(200);
+    expect(res.body.notDeliveredTo).toEqual(["US"]); // Germany unlocked, the owner's US block kept
+    expect(res.body.supplier.countries).toEqual([
+      { country: "NL", available: true, costMinor: 499, deliveryDays: 8 },
+      { country: "US", available: true, costMinor: 350, deliveryDays: 12 },
+      { country: "DE", available: true, costMinor: 479, deliveryDays: 9 },
+    ]);
+    expect(res.body.variants.map((v: { title: string; costMinor: number | null; inStock: boolean; priceMinor: number }) => [v.title, v.costMinor, v.inStock, v.priceMinor])).toEqual([
+      ["Rose", 499, false, 1495], // in stock where it's first sold (NL): no
+      ["Graphite", 510, false, 1495], // no longer listed on AliExpress
+      ["White", null, true, 1495], // added by hand: untouched
+    ]);
+
+    const handMade = await prisma.product.create({ data: { slug: "hand-made", title: "Hand made", variants: { create: { sku: "HM-1", priceMinor: 100 } } } });
+    await http().post(`/api/admin/aliexpress/products/${handMade.id}/recheck`).set("Cookie", adminCookie).expect(400);
   });
 
   it("is admin-only", async () => {

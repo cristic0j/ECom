@@ -4,6 +4,7 @@ import type { AdminProductDto, ProductInput } from "@ecom/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import { ProductsService } from "../catalog/products.service";
 import { minPrice, normalizeProductInput } from "./normalize-product";
+import { supplierBlocked, withSupplierBlocks } from "../suppliers/aliexpress-product";
 
 @Injectable()
 export class AdminProductsService {
@@ -21,6 +22,7 @@ export class AdminProductsService {
         description: input.description,
         status: input.status,
         attributes: input.attributes,
+        notDeliveredTo: input.notDeliveredTo,
         priceMinMinor: minPrice(input),
         categories: { create: input.categoryIds.map((categoryId) => ({ categoryId })) },
         variants: {
@@ -42,6 +44,7 @@ export class AdminProductsService {
     await this.prisma.$transaction(async (tx) => {
       const existing = await tx.product.findUnique({ where: { id }, include: { variants: { select: { id: true } } } });
       if (!existing) throw new NotFoundException("Product not found");
+      const notDeliveredTo = withSupplierBlocks(input.notDeliveredTo, supplierBlocked(existing.supplierData));
 
       const ownIds = new Set(existing.variants.map((v) => v.id));
       const foreign = input.variants.filter((v) => v.id && !ownIds.has(v.id));
@@ -71,6 +74,7 @@ export class AdminProductsService {
           description: input.description,
           status: input.status,
           attributes: input.attributes,
+          notDeliveredTo,
           priceMinMinor: minPrice(input),
           categories: { create: input.categoryIds.map((categoryId) => ({ categoryId })) },
           images: { create: input.images.map((img, position) => ({ ...img, position })) },

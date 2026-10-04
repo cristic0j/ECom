@@ -23,7 +23,18 @@ function collectOptions(variants: VariantDto[]): [string, string[]][] {
 const matches = (v: VariantDto, selected: Record<string, string>) =>
   Object.entries(selected).every(([k, val]) => v.options[k] === val);
 
-export function ProductView({ product, currency, locale }: { product: ProductDto; currency: string; locale: string }) {
+export function ProductView({
+  product,
+  currency,
+  locale,
+  deliversTo,
+}: {
+  product: ProductDto;
+  currency: string;
+  locale: string;
+  /** Country names, when the product can't go to all of the store's countries; null otherwise */
+  deliversTo: string[] | null;
+}) {
   const options = useMemo(() => collectOptions(product.variants), [product.variants]);
   const initial = product.variants.find((v) => v.isDefault) ?? product.variants[0];
   const [selected, setSelected] = useState<Record<string, string>>(initial?.options ?? {});
@@ -142,6 +153,18 @@ export function ProductView({ product, currency, locale }: { product: ProductDto
         ))}
 
         <AddToCart variantId={variant?.id} inStock={variant?.inStock ?? false} />
+
+        {deliversTo && (
+          <p className="text-sm text-muted-foreground" data-testid="delivers-to">
+            {deliversTo.length ? (
+              <>
+                <span className="font-medium text-foreground">Delivers to:</span> {deliversTo.join(", ")}
+              </>
+            ) : (
+              "Currently not available for delivery."
+            )}
+          </p>
+        )}
 
         {variant && <p className="text-xs text-muted-foreground">SKU: {variant.sku}</p>}
 

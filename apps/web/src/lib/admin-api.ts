@@ -17,7 +17,6 @@ import type {
   ProductSummaryDto,
   StoreSettings,
   SupplierConnectionDto,
-  SupplierSettings,
 } from "@ecom/shared";
 import { json, request, toQuery } from "./api-client";
 
@@ -60,10 +59,9 @@ export const adminApi = {
   aliexpressConnect: (code: string) =>
     request<SupplierConnectionDto>("/admin/aliexpress/connect", json("POST", { code })),
   aliexpressDisconnect: () => request<void>("/admin/aliexpress", json("DELETE")),
-  aliexpressSettings: () => request<SupplierSettings>("/admin/aliexpress/settings"),
-  saveAliexpressSettings: (settings: SupplierSettings) =>
-    request<SupplierSettings>("/admin/aliexpress/settings", json("PUT", settings)),
   aliexpressImport: (url: string) => request<AdminProductDto>("/admin/aliexpress/import", json("POST", { url })),
+  aliexpressRecheck: (productId: string) =>
+    request<AdminProductDto>(`/admin/aliexpress/products/${productId}/recheck`, json("POST")),
 
   uploadImage: (file: File) => {
     const form = new FormData();

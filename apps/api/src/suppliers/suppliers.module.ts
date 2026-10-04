@@ -1,14 +1,12 @@
-import { Body, Controller, Delete, Get, HttpCode, Module, Post, Put, Query, Res, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, HttpCode, Module, Param, Post, Query, Res, UseGuards } from "@nestjs/common";
 import { ApiCookieAuth, ApiTags } from "@nestjs/swagger";
 import type { Response } from "express";
 import {
   supplierConnectSchema,
   supplierImportSchema,
-  supplierSettingsSchema,
   type AdminUserDto,
   type SupplierConnectInput,
   type SupplierImportInput,
-  type SupplierSettings,
 } from "@ecom/shared";
 import { AdminAuthGuard, CurrentAdmin, Roles } from "../auth/admin-auth.guard";
 import { ZodValidationPipe } from "../common/zod-validation.pipe";
@@ -74,21 +72,17 @@ export class AdminAliExpressController {
     return this.aliexpress.disconnect();
   }
 
-  /** The countries products are checked for on import */
-  @Get("settings")
-  settings() {
-    return this.importer.getSettings();
-  }
-
-  @Put("settings")
-  saveSettings(@Body(new ZodValidationPipe(supplierSettingsSchema)) body: SupplierSettings) {
-    return this.importer.saveSettings(body);
-  }
-
   /** Creates a draft product from a product link; returns it in the admin shape */
   @Post("import")
   import(@Body(new ZodValidationPipe(supplierImportSchema)) body: SupplierImportInput) {
     return this.importer.import(body.url);
+  }
+
+  /** Refreshes an imported product's delivery countries, costs and stock */
+  @Post("products/:id/recheck")
+  @HttpCode(200)
+  recheck(@Param("id") id: string) {
+    return this.importer.recheck(id);
   }
 }
 

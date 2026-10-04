@@ -138,6 +138,12 @@ AliExpress won't accept `localhost` as a Callback URL, so locally keep the app's
 
 Before going live, change the Callback URL to your real domain, both in the AliExpress console and in `ALIEXPRESS_CALLBACK_URL`. Then the redirect connects on its own.
 
+### Importing products
+
+**Products → Import from AliExpress**: paste a product link and the store creates a **draft** with the title, description, photos (copied into your storage), options and your cost per option. Prices start at about 2.5× cost. Change anything, then publish.
+
+The import checks cost and delivery for each country in **Settings → Shipping → Countries you deliver to** (the same list checkout offers). Countries AliExpress won't ship the product to are blocked for that product: checkout asks the customer to remove it, and the product page lists where it does deliver. **Re-check on AliExpress** (in the product editor) refreshes delivery countries, costs and stock. Costs and everything about the supplier are only shown in the admin.
+
 ## Deploy topology
 
 The browser only ever talks to the **web** app. Next.js forwards `/api/*` to the API at `API_INTERNAL_URL`, so the admin session cookie is first-party and no CORS setup is needed.

@@ -111,7 +111,7 @@ async function fillAddress(page: Page) {
   await page.getByLabel("Address", { exact: true }).fill("1 Main St");
   await page.getByLabel("City").fill("Berlin");
   await page.getByLabel("Postal code").fill("10115");
-  await page.getByLabel("Country code (e.g. DE)").fill("DE");
+  await page.getByLabel("Country").selectOption("DE");
 }
 
 /**
@@ -316,7 +316,7 @@ test("a shopper's guest cart carries over when they create an account", async ({
   await page.getByLabel("Address", { exact: true }).fill("2 Side St");
   await page.getByLabel("City").fill("Hamburg");
   await page.getByLabel("Postal code").fill("20095");
-  await page.getByLabel("Country code (e.g. DE)").fill("DE");
+  await page.getByLabel("Country").selectOption("DE");
   if (cardPayments) {
     await stubStripeCheckout(page);
     await page.getByRole("button", { name: "Continue to payment" }).click();

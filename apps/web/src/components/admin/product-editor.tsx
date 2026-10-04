@@ -3,8 +3,9 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
-import { ExternalLink, Plus, Trash2 } from "lucide-react";
+import { ExternalLink, Plus, RefreshCw, Trash2 } from "lucide-react";
 import {
+  countryName,
   productInputSchema,
   type AdminProductDto,
   type CategoryDto,
@@ -12,6 +13,7 @@ import {
   type ProductStatus,
   type SupplierProductInfo,
 } from "@ecom/shared";
+import { storeConfig } from "@store-config";
 import { adminApi, ApiRequestError } from "@/lib/admin-api";
 import { useMoney } from "@/lib/use-money";
 import { minorToInput, parseMoneyToMinor, slugify } from "@/lib/utils";
@@ -68,17 +70,36 @@ const toRows = (p?: AdminProductDto): VariantRow[] =>
     },
   ];
 
-const countryName = (code: string) => {
-  try {
-    return new Intl.DisplayNames(["en"], { type: "region" }).of(code) ?? code;
-  } catch {
-    return code;
-  }
-};
-
 /** Where an imported product comes from: the supplier link and what it costs and takes per country. */
-function SupplierSection({ info }: { info: SupplierProductInfo }) {
+function SupplierSection({
+  info,
+  storeCountries,
+  onRecheck,
+}: {
+  info: SupplierProductInfo;
+  storeCountries: string[];
+  /** Admins only: asks AliExpress again */
+  onRecheck?: () => Promise<void>;
+}) {
   const { format } = useMoney();
+  const [checking, setChecking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // Countries added to the store after the last check have no data yet
+  const rows = [
+    ...info.countries,
+    ...storeCountries.filter((c) => !info.countries.some((i) => i.country === c)).map((country) => ({ country, unchecked: true })),
+  ];
+  const recheck = async () => {
+    setChecking(true);
+    setError(null);
+    try {
+      await onRecheck!();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Re-check failed");
+    } finally {
+      setChecking(false);
+    }
+  };
   return (
     <Section title="AliExpress">
       <a href={info.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sm underline">
@@ -93,12 +114,16 @@ function SupplierSection({ info }: { info: SupplierProductInfo }) {
           </tr>
         </thead>
         <tbody>
-          {info.countries.map((c) => (
-            <tr key={c.country} className={c.available ? undefined : "text-muted-foreground"}>
+          {rows.map((c) => (
+            <tr key={c.country} className={"available" in c && c.available ? undefined : "text-muted-foreground"}>
               <td className="py-1" title={countryName(c.country)}>
                 {c.country}
               </td>
-              {c.available ? (
+              {"unchecked" in c ? (
+                <td className="py-1" colSpan={2}>
+                  Not checked yet
+                </td>
+              ) : c.available ? (
                 <>
                   <td className="py-1">{c.costMinor !== null ? format(c.costMinor) : "—"}</td>
                   <td className="py-1">{c.deliveryDays ? `${c.deliveryDays} days` : "—"}</td>
@@ -113,9 +138,17 @@ function SupplierSection({ info }: { info: SupplierProductInfo }) {
         </tbody>
       </table>
       <p className="text-xs text-muted-foreground">
-        Imported {new Date(info.importedAt).toLocaleDateString()}. Each option&apos;s cost is the highest of these
-        countries. Only you see this.
+        {info.checkedAt
+          ? `Checked ${new Date(info.checkedAt).toLocaleDateString()}`
+          : `Imported ${new Date(info.importedAt).toLocaleDateString()}`}
+        . Each option&apos;s cost is the highest of these countries. Only you see this.
       </p>
+      {error && <Alert>{error}</Alert>}
+      {onRecheck && (
+        <Button size="sm" variant="secondary" onClick={recheck} disabled={checking} className="w-full">
+          <RefreshCw className="size-4" /> {checking ? "Checking…" : "Re-check on AliExpress"}
+        </Button>
+      )}
     </Section>
   );
 }
@@ -139,6 +172,8 @@ export function ProductEditor({ product }: { product?: AdminProductDto }) {
   const [images, setImages] = useState<ImageRow[]>(product?.images.map(({ url, alt }) => ({ url, alt })) ?? []);
   const [rows, setRows] = useState<VariantRow[]>(() => toRows(product));
   const [options, setOptions] = useState<OptionDef[]>(() => optionsFromVariants(toRows(product)));
+  const [notDeliveredTo, setNotDeliveredTo] = useState<string[]>(product?.notDeliveredTo ?? []);
+  const [storeCountries, setStoreCountries] = useState<string[]>(storeConfig.shipping.countries);
 
   const [categories, setCategories] = useState<CategoryDto[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -149,7 +184,26 @@ export function ProductEditor({ product }: { product?: AdminProductDto }) {
 
   useEffect(() => {
     adminApi.listCategories().then(setCategories).catch(() => {});
+    adminApi
+      .getSettings()
+      .then((s) => s.shipping?.countries && setStoreCountries(s.shipping.countries))
+      .catch(() => {});
   }, []);
+
+  // AliExpress won't ship these: they stay unticked and can't be switched on
+  const supplierBlocked = saved?.supplier?.countries.filter((c) => !c.available).map((c) => c.country) ?? [];
+
+  /** Re-check replaces costs, stock and delivery countries with AliExpress's current ones. */
+  const onRecheck = async () => {
+    if (!product) return;
+    const message = "Update delivery countries, costs and stock from AliExpress? Unsaved changes on this page will be lost.";
+    if (!confirm(message)) return;
+    const result = await adminApi.aliexpressRecheck(product.id);
+    setRows(toRows(result));
+    setNotDeliveredTo(result.notDeliveredTo);
+    setSaved(result);
+    await revalidateStorefront();
+  };
 
   const onTitle = (v: string) => {
     setTitle(v);
@@ -202,6 +256,7 @@ export function ProductEditor({ product }: { product?: AdminProductDto }) {
       categoryIds,
       variants,
       images,
+      notDeliveredTo,
     });
 
     if (!parsed.success) {
@@ -368,7 +423,38 @@ export function ProductEditor({ product }: { product?: AdminProductDto }) {
             </Select>
           </Section>
 
-          {saved?.supplier && <SupplierSection info={saved.supplier} />}
+          <Section title="Delivery">
+            <p className="text-sm text-muted-foreground">Untick countries this product can&apos;t be delivered to.</p>
+            <ul className="space-y-2">
+              {storeCountries.map((c) => {
+                const locked = supplierBlocked.includes(c);
+                return (
+                  <li key={c}>
+                    <label className={`flex items-center gap-2 text-sm ${locked ? "text-muted-foreground" : ""}`}>
+                      <input
+                        type="checkbox"
+                        checked={!locked && !notDeliveredTo.includes(c)}
+                        disabled={locked}
+                        onChange={(e) =>
+                          setNotDeliveredTo(e.target.checked ? notDeliveredTo.filter((x) => x !== c) : [...notDeliveredTo, c])
+                        }
+                      />
+                      {countryName(c)}
+                      {locked && <span className="text-xs">(AliExpress doesn&apos;t ship here)</span>}
+                    </label>
+                  </li>
+                );
+              })}
+            </ul>
+          </Section>
+
+          {saved?.supplier && (
+            <SupplierSection
+              info={saved.supplier}
+              storeCountries={storeCountries}
+              onRecheck={admin.role === "ADMIN" ? onRecheck : undefined}
+            />
+          )}
 
           <Section title="Categories">
             {categories.length === 0 ? (

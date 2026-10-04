@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { countryName } from "@ecom/shared";
 import { api, NotFoundError } from "@/lib/api";
 import { getStore } from "@/lib/store";
 import { ProductView } from "@/components/store/product-view";
@@ -30,6 +31,8 @@ export default async function ProductPage({ params }: PageProps<"/p/[slug]">) {
   const [product, store] = await Promise.all([loadProduct(slug), getStore()]);
   const primaryCategory = product.categories[0];
   const defaultVariant = product.variants.find((v) => v.isDefault) ?? product.variants[0];
+  const deliversTo = store.shippingCountries.filter((c) => !product.notDeliveredTo.includes(c));
+  const restricted = deliversTo.length < store.shippingCountries.length;
 
   const jsonLd = {
     "@context": "https://schema.org",
@@ -62,7 +65,12 @@ export default async function ProductPage({ params }: PageProps<"/p/[slug]">) {
           </>
         )}
       </nav>
-      <ProductView product={product} currency={store.currency} locale={store.locale} />
+      <ProductView
+        product={product}
+        currency={store.currency}
+        locale={store.locale}
+        deliversTo={restricted ? deliversTo.map((c) => countryName(c, store.locale)) : null}
+      />
       <script
         type="application/ld+json"
         // JSON.stringify output is safe here once "<" is escaped (prevents </script> breakout)

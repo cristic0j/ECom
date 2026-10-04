@@ -4,10 +4,11 @@ import {
   Inject,
   Injectable,
   Logger,
+  NotFoundException,
   ServiceUnavailableException,
 } from "@nestjs/common";
 import type { Prisma } from "@ecom/db";
-import { MAX_UPLOAD_BYTES, supplierSettingsSchema, type AdminProductDto, type SupplierSettings } from "@ecom/shared";
+import { MAX_UPLOAD_BYTES, type AdminProductDto } from "@ecom/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import { ProductsService } from "../catalog/products.service";
 import { SettingsService } from "../settings/settings.module";
@@ -16,21 +17,26 @@ import { productImageKey, sniffImageType } from "../media/image-types";
 import { ALIEXPRESS_CLIENT, AliExpressApiError, type AliExpressApi } from "./aliexpress-client";
 import { AliExpressService } from "./aliexpress.service";
 import {
+  assertCurrency,
   buildImport,
+  countryTable,
   ImportError,
   isAliExpressHost,
   isAliExpressImageHost,
   parseProductId,
   productUrl,
+  skuFacts,
+  supplierBlocked,
+  withSupplierBlocks,
+  type CountryAnswers,
   type DsProductResponse,
 } from "./aliexpress-product";
 
 const SUPPLIER = "aliexpress";
-/** Admin-only settings row; the public "store" settings never include it */
-const SETTINGS_KEY = "aliexpress";
-export const DEFAULT_COUNTRIES = ["NL", "DE", "FR", "ES", "IT", "US"];
 /** rsp_code for a product id AliExpress doesn't know */
 const NOT_FOUND = "605";
+/** AliExpress lookups at a time (one per delivery country) */
+const CONCURRENCY = 5;
 
 /** URL slug from a title, cut at a whole word (AliExpress titles are long) */
 function slugify(title: string): string {
@@ -59,57 +65,20 @@ export class AliExpressImportService {
     @Inject(STORAGE_DRIVER) private readonly storage: StorageDriver,
   ) {}
 
-  async getSettings(): Promise<SupplierSettings> {
-    const row = await this.prisma.storeSetting.findUnique({ where: { key: SETTINGS_KEY } });
-    const parsed = supplierSettingsSchema.safeParse(row?.value ?? {});
-    return parsed.success ? parsed.data : { countries: DEFAULT_COUNTRIES };
-  }
-
-  async saveSettings(settings: SupplierSettings): Promise<SupplierSettings> {
-    const value = settings as Prisma.InputJsonValue;
-    await this.prisma.storeSetting.upsert({
-      where: { key: SETTINGS_KEY },
-      create: { key: SETTINGS_KEY, value },
-      update: { value },
-    });
-    return settings;
-  }
-
   /** Creates a draft product from an AliExpress link, with its photos copied into the store's storage. */
   async import(link: string): Promise<AdminProductDto> {
-    const client = this.client;
-    if (!client) throw new ServiceUnavailableException("AliExpress isn't set up: see Admin → Settings → AliExpress");
-
+    const client = this.requireClient();
     const productId = parseProductId(link) ?? (await this.followShortLink(link));
     if (!productId) {
       throw new BadRequestException("That doesn't look like an AliExpress product link. Copy the link from the product page.");
     }
     await this.assertNotImported(productId);
 
-    const [{ countries }, { currency }, session] = await Promise.all([
-      this.getSettings(),
-      this.settings.commerce(),
-      this.aliexpress.accessToken(),
-    ]);
-
+    const { currency } = await this.settings.commerce();
+    const answers = await this.lookUp(client, productId);
     let draft;
     try {
-      const answers = await Promise.all(
-        countries.map(async (country) => ({ country, response: await this.fetchProduct(client, session, productId, country, currency) })),
-      );
-      if (answers.every((a) => !a.response.sold)) {
-        const refusal = answers.find((a) => a.response.code !== NOT_FOUND);
-        throw new ImportError(
-          refusal
-            ? `AliExpress won't sell this product to any of your countries (${refusal.response.message}).`
-            : "AliExpress couldn't find this product. Check the link, or the product may no longer be sold.",
-        );
-      }
-      draft = buildImport(
-        productId,
-        answers.map(({ country, response }) => ({ country, response: response.sold ? response.body : null })),
-        currency,
-      );
+      draft = buildImport(productId, answers, currency);
     } catch (err) {
       throw this.asHttpError(err);
     }
@@ -130,6 +99,7 @@ export class AliExpressImportService {
           supplier: SUPPLIER,
           supplierProductId: productId,
           supplierData: imported as unknown as Prisma.InputJsonValue,
+          notDeliveredTo: draft.countries.filter((c) => !c.available).map((c) => c.country),
           variants: {
             create: draft.variants.map(({ image: _image, ...v }, position) => ({ ...v, position })),
           },
@@ -159,6 +129,92 @@ export class AliExpressImportService {
 
     this.logger.log(`Imported AliExpress product ${productId} as a draft (${draft.variants.length} options)`);
     return this.products.getAdminById(id);
+  }
+
+  /**
+   * Asks AliExpress again: refreshes the country table and "not delivered to", and each linked
+   * option's cost and stock. The owner's names, photos and prices stay as they are.
+   */
+  async recheck(id: string): Promise<AdminProductDto> {
+    const client = this.requireClient();
+    const product = await this.prisma.product.findUnique({
+      where: { id },
+      select: {
+        supplier: true,
+        supplierProductId: true,
+        supplierData: true,
+        notDeliveredTo: true,
+        variants: { select: { id: true, supplierSkuId: true } },
+      },
+    });
+    if (!product) throw new NotFoundException("Product not found");
+    if (product.supplier !== SUPPLIER || !product.supplierProductId) {
+      throw new BadRequestException("This product wasn't imported from AliExpress");
+    }
+
+    const { currency } = await this.settings.commerce();
+    const answers = await this.lookUp(client, product.supplierProductId);
+    try {
+      assertCurrency(answers, currency);
+    } catch (err) {
+      throw this.asHttpError(err);
+    }
+    const facts = skuFacts(answers);
+    const countries = countryTable(answers);
+    const supplierData = { ...(product.supplierData as object), checkedAt: new Date().toISOString(), countries };
+    // The owner's own blocks stay; the supplier's are replaced by its current answer
+    const previouslyBlocked = supplierBlocked(product.supplierData);
+    const ownBlocks = product.notDeliveredTo.filter((c) => !previouslyBlocked.includes(c));
+
+    await this.prisma.$transaction([
+      this.prisma.product.update({
+        where: { id },
+        data: {
+          supplierData: supplierData as unknown as Prisma.InputJsonValue,
+          notDeliveredTo: withSupplierBlocks(ownBlocks, supplierBlocked({ countries })),
+        },
+      }),
+      // An option AliExpress no longer lists can't be ordered there, so it goes out of stock
+      ...product.variants
+        .filter((v) => v.supplierSkuId)
+        .map((v) => {
+          const fact = facts.get(v.supplierSkuId!);
+          return this.prisma.productVariant.update({
+            where: { id: v.id },
+            data: fact ? { costMinor: fact.costMinor, inStock: fact.inStock } : { inStock: false },
+          });
+        }),
+    ]);
+    this.logger.log(`Re-checked AliExpress product ${product.supplierProductId}`);
+    return this.products.getAdminById(id);
+  }
+
+  /** The product as AliExpress sells it to each delivery country; null where it doesn't. */
+  private async lookUp(client: AliExpressApi, productId: string): Promise<CountryAnswers> {
+    const [{ currency, shipping }, session] = await Promise.all([this.settings.commerce(), this.aliexpress.accessToken()]);
+    try {
+      const results: Awaited<ReturnType<typeof this.fetchProduct>>[] = [];
+      for (let i = 0; i < shipping.countries.length; i += CONCURRENCY) {
+        const batch = shipping.countries.slice(i, i + CONCURRENCY);
+        results.push(...(await Promise.all(batch.map((c) => this.fetchProduct(client, session, productId, c, currency)))));
+      }
+      if (results.every((r) => !r.sold)) {
+        const refusal = results.find((r) => r.code !== NOT_FOUND);
+        throw new ImportError(
+          refusal
+            ? `AliExpress won't sell this product to any of your countries (${refusal.message}).`
+            : "AliExpress couldn't find this product. Check the link, or the product may no longer be sold.",
+        );
+      }
+      return shipping.countries.map((country, i) => ({ country, response: results[i].sold ? results[i].body : null }));
+    } catch (err) {
+      throw this.asHttpError(err);
+    }
+  }
+
+  private requireClient(): AliExpressApi {
+    if (!this.client) throw new ServiceUnavailableException("AliExpress isn't set up: see Admin → Settings → AliExpress");
+    return this.client;
   }
 
   private async fetchProduct(client: AliExpressApi, session: string, productId: string, country: string, currency: string) {

@@ -16,6 +16,8 @@ export type Store = {
   pageSize: number;
   /** How to pay while card payments aren't set up; empty = say nothing */
   paymentInstructions: string;
+  /** Countries the store delivers to (ISO alpha-2), in the owner's order */
+  shippingCountries: string[];
 };
 
 /** store.config.ts defaults with admin Settings overrides applied. Deduped per request. */
@@ -31,6 +33,7 @@ export const getStore = cache(async (): Promise<Store> => {
     features: storeConfig.features,
     pageSize: storeConfig.catalog.pageSize,
     paymentInstructions: overrides.paymentInstructions ?? storeConfig.paymentInstructions,
+    shippingCountries: overrides.shipping?.countries ?? storeConfig.shipping.countries,
   };
 });
 

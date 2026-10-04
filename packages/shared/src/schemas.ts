@@ -1,5 +1,9 @@
 import { z } from "zod";
 
+/** ISO 3166-1 alpha-2, e.g. "DE" */
+const countryCode = z.string().trim().length(2, "Use a 2-letter country code, e.g. NL").toUpperCase();
+const countryList = z.array(countryCode).transform((c) => [...new Set(c)]);
+
 const slug = z
   .string()
   .min(1)
@@ -42,6 +46,8 @@ export const productInputSchema = z.object({
   categoryIds: z.array(z.string()).default([]),
   variants: z.array(variantInputSchema).min(1, "At least one variant is required"),
   images: z.array(imageInputSchema).default([]),
+  /** Countries this product can't be delivered to (checkout blocks them) */
+  notDeliveredTo: countryList.default([]),
 });
 export type ProductInput = z.infer<typeof productInputSchema>;
 
@@ -96,6 +102,8 @@ export const storeSettingsSchema = z
         flatRateMinor: z.number().int().nonnegative(),
         /** Subtotal at or above which shipping is free; null = never free */
         freeOverMinor: z.number().int().nonnegative().nullable(),
+        /** Countries the store delivers to; checkout offers only these, and imports are checked for them */
+        countries: countryList.pipe(z.array(z.string()).min(1, "Add at least one country").max(30, "Use at most 30 countries")),
       })
       .partial(),
     /** Shown at checkout, on the order page and in the order email while an order awaits payment */
@@ -143,8 +151,7 @@ export const addressSchema = z.object({
   line2: z.string().trim().max(200).default(""),
   city: z.string().trim().min(1, "City is required").max(120),
   postalCode: z.string().trim().min(1, "Postal code is required").max(20),
-  /** ISO 3166-1 alpha-2, e.g. "DE" */
-  country: z.string().trim().length(2, "Use a 2-letter country code").toUpperCase(),
+  country: countryCode,
   phone: z.string().trim().max(40).default(""),
 });
 export type Address = z.infer<typeof addressSchema>;
@@ -198,18 +205,6 @@ export type AdminOrderListQuery = z.infer<typeof adminOrderListQuerySchema>;
 /** Finishing a supplier connection: the address the supplier sent the browser to, or just its `code` value. */
 export const supplierConnectSchema = z.object({ code: z.string().trim().min(1).max(4000) });
 export type SupplierConnectInput = z.infer<typeof supplierConnectSchema>;
-
-const countryCode = z.string().trim().length(2, "Use 2-letter country codes, e.g. NL").toUpperCase();
-
-/** Countries an AliExpress product is checked for on import (cost and delivery time differ per country). */
-export const supplierSettingsSchema = z.object({
-  countries: z
-    .array(countryCode)
-    .min(1, "Add at least one country")
-    .max(10, "Use at most 10 countries")
-    .transform((c) => [...new Set(c)]),
-});
-export type SupplierSettings = z.infer<typeof supplierSettingsSchema>;
 
 /** An AliExpress product link (any form AliExpress shares), or just its product id. */
 export const supplierImportSchema = z.object({ url: z.string().trim().min(1, "Paste a product link").max(2000) });

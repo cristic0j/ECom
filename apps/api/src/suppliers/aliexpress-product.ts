@@ -88,6 +88,15 @@ export const isAliExpressHost = (host: string) => /(^|\.)aliexpress\.(com|us)$/i
 /** Where AliExpress serves product images; nothing else is downloaded. */
 export const isAliExpressImageHost = (host: string) => /(^|\.)(alicdn\.com|aliexpress-media\.com)$/i.test(host);
 
+/** Countries the supplier's last answer said it won't ship to (from the product's saved supplierData). */
+export function supplierBlocked(supplierData: unknown): string[] {
+  const countries = (supplierData as { countries?: SupplierCountryInfo[] } | null)?.countries ?? [];
+  return countries.filter((c) => !c.available).map((c) => c.country);
+}
+
+/** The owner's own blocks plus the supplier's: a country the supplier won't ship to can't be switched on. */
+export const withSupplierBlocks = (own: string[], blocked: string[]) => [...own, ...blocked.filter((c) => !own.includes(c))];
+
 export const productUrl = (productId: string) => `https://www.aliexpress.com/item/${productId}.html`;
 
 const toMinor = (amount: string | undefined): number | null => {
@@ -127,36 +136,65 @@ const skusOf = (r: DsProductResponse) => r.result?.ae_item_sku_info_dtos?.ae_ite
 const costOf = (s: DsSku) => toMinor(s.offer_sale_price) ?? toMinor(s.sku_price);
 const stockOf = (s: DsSku) => Number(s.sku_available_stock ?? 0) || 0;
 
+/** One `aliexpress.ds.product.get` answer per country, in the owner's order; null where it isn't sold */
+export type CountryAnswers = { country: string; response: DsProductResponse | null }[];
+
+const soldIn = (answers: CountryAnswers) => answers.filter((a) => a.response && skusOf(a.response).length > 0);
+
+/**
+ * Per sku: the highest cost over the countries that sell it (so profit figures stay on the safe
+ * side), and whether it's in stock in the first country that sells it.
+ */
+export function skuFacts(answers: CountryAnswers): Map<string, { costMinor: number; inStock: boolean }> {
+  const facts = new Map<string, { costMinor: number; inStock: boolean }>();
+  for (const a of soldIn(answers)) {
+    for (const s of skusOf(a.response!)) {
+      const cost = costOf(s);
+      if (cost === null) continue;
+      const id = String(s.sku_id);
+      const known = facts.get(id);
+      facts.set(id, { costMinor: Math.max(cost, known?.costMinor ?? 0), inStock: known?.inStock ?? stockOf(s) > 0 });
+    }
+  }
+  return facts;
+}
+
+/** The cheapest cost and the delivery time per country, for the admin's table. */
+export function countryTable(answers: CountryAnswers): SupplierCountryInfo[] {
+  return answers.map(({ country, response }) => {
+    const prices = response ? skusOf(response).flatMap((s) => costOf(s) ?? []) : [];
+    const days = Number(response?.result?.logistics_info_dto?.delivery_time);
+    return {
+      country,
+      available: prices.length > 0,
+      costMinor: prices.length ? Math.min(...prices) : null,
+      deliveryDays: prices.length && Number.isFinite(days) && days > 0 ? days : null,
+    };
+  });
+}
+
+/** Throws when AliExpress priced the product in another currency than the store's. */
+export function assertCurrency(answers: CountryAnswers, currency: string) {
+  const wrong = soldIn(answers)
+    .flatMap((a) => skusOf(a.response!))
+    .find((s) => s.currency_code && s.currency_code !== currency);
+  if (wrong) throw new ImportError(`AliExpress returned prices in ${wrong.currency_code}, not the store's ${currency}`);
+}
+
 /**
  * Turns `aliexpress.ds.product.get` answers (one per country, in the owner's order; null where the
  * product isn't sold) into a draft product. Option values the seller gave the same name (two
  * different "Black"s) are numbered so they stay separate.
  */
-export function buildImport(
-  productId: string,
-  answers: { country: string; response: DsProductResponse | null }[],
-  currency: string,
-): ImportedProduct {
-  const sold = answers.filter((a) => a.response && skusOf(a.response).length > 0);
-  const base = sold[0]?.response;
+export function buildImport(productId: string, answers: CountryAnswers, currency: string): ImportedProduct {
+  const base = soldIn(answers)[0]?.response;
   if (!base) throw new ImportError("AliExpress doesn't sell this product to any of your countries");
-
-  const wrongCurrency = sold.flatMap((a) => skusOf(a.response!)).find((s) => s.currency_code && s.currency_code !== currency);
-  if (wrongCurrency) {
-    throw new ImportError(`AliExpress returned prices in ${wrongCurrency.currency_code}, not the store's ${currency}`);
-  }
+  assertCurrency(answers, currency);
 
   const info = base.result!.ae_item_base_info_dto ?? {};
   const title = (info.subject ?? "").trim().slice(0, 200) || `AliExpress product ${productId}`;
 
-  // Costs per sku per country, for the per-variant maximum and the country table
-  const costs = new Map<string, number[]>();
-  for (const a of sold) {
-    for (const s of skusOf(a.response!)) {
-      const cost = costOf(s);
-      if (cost !== null) costs.set(String(s.sku_id), [...(costs.get(String(s.sku_id)) ?? []), cost]);
-    }
-  }
+  const facts = skuFacts(answers);
 
   // Name each option value; a second value with the same name becomes "Black (2)"
   const valueNames = new Map<string, string>();
@@ -178,8 +216,8 @@ export function buildImport(
   const byCombination = new Map<string, ImportedVariant>();
   for (const s of skusOf(base)) {
     const skuId = String(s.sku_id);
-    const allCosts = costs.get(skuId);
-    if (!allCosts?.length) continue;
+    const fact = facts.get(skuId);
+    if (!fact) continue;
     const options: Record<string, string> = {};
     let image: string | null = null;
     for (const p of s.ae_sku_property_dtos?.ae_sku_property_d_t_o ?? []) {
@@ -190,14 +228,13 @@ export function buildImport(
       options[option] = nameValue(option, String(p.property_value_id ?? display), display);
       image ??= p.sku_image || null;
     }
-    const costMinor = Math.max(...allCosts);
     const variant: ImportedVariant = {
       supplierSkuId: skuId,
       sku: `AE-${skuId}`.slice(0, 64),
       title: Object.values(options).join(" / ") || "Default",
       options,
-      costMinor,
-      priceMinor: suggestedPrice(costMinor),
+      costMinor: fact.costMinor,
+      priceMinor: suggestedPrice(fact.costMinor),
       inStock: stockOf(s) > 0,
       isDefault: false,
       image,
@@ -229,16 +266,7 @@ export function buildImport(
     attributes[name] = attributes[name] ? `${attributes[name]}, ${value}` : value;
   }
 
-  const countries: SupplierCountryInfo[] = answers.map(({ country, response }) => {
-    const prices = response ? skusOf(response).flatMap((s) => costOf(s) ?? []) : [];
-    const days = Number(response?.result?.logistics_info_dto?.delivery_time);
-    return {
-      country,
-      available: prices.length > 0,
-      costMinor: prices.length ? Math.min(...prices) : null,
-      deliveryDays: prices.length && Number.isFinite(days) && days > 0 ? days : null,
-    };
-  });
+  const countries = countryTable(answers);
 
   return {
     title,

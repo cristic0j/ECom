@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Field, Input, Textarea } from "@/components/ui/form";
 import { Alert, Card } from "@/components/ui/misc";
 import { PageHeader, useAdmin } from "@/components/admin/admin-shell";
-import { AliExpressConnection, AliExpressCountries } from "@/components/admin/aliexpress-connection";
+import { AliExpressConnection } from "@/components/admin/aliexpress-connection";
 import { revalidateStorefront } from "../../actions";
 
 const defaults = {
@@ -24,6 +24,7 @@ const defaults = {
   radius: storeConfig.theme.radius,
   shippingFlat: minorToInput(storeConfig.shipping.flatRateMinor),
   shippingFreeOver: minorToInput(storeConfig.shipping.freeOverMinor),
+  shippingCountries: storeConfig.shipping.countries.join(", "),
   paymentInstructions: storeConfig.paymentInstructions,
 };
 type Form = Record<keyof typeof defaults, string>;
@@ -52,6 +53,7 @@ export default function SettingsPage() {
           ...s.theme,
           ...(s.shipping?.flatRateMinor !== undefined && { shippingFlat: minorToInput(s.shipping.flatRateMinor) }),
           ...(s.shipping?.freeOverMinor !== undefined && { shippingFreeOver: minorToInput(s.shipping.freeOverMinor) }),
+          ...(s.shipping?.countries && { shippingCountries: s.shipping.countries.join(", ") }),
         })),
       )
       .catch((e) => setError(e.message));
@@ -78,7 +80,7 @@ export default function SettingsPage() {
       currency: form.currency,
       locale: form.locale,
       theme: { primary: form.primary, primaryForeground: form.primaryForeground, accent: form.accent, radius: form.radius },
-      shipping: { flatRateMinor, freeOverMinor },
+      shipping: { flatRateMinor, freeOverMinor, countries: form.shippingCountries.split(/[\s,]+/).filter(Boolean) },
       paymentInstructions: form.paymentInstructions,
     };
     try {
@@ -162,6 +164,18 @@ export default function SettingsPage() {
                 />
               </Field>
             </div>
+            <Field
+              label="Countries you deliver to"
+              htmlFor="shippingCountries"
+              hint="2-letter codes, e.g. NL, DE, FR, US. Checkout offers only these, and AliExpress imports are checked for them."
+            >
+              <Input
+                id="shippingCountries"
+                value={form.shippingCountries}
+                onChange={(e) => set("shippingCountries")({ target: { value: e.target.value.toUpperCase() } })}
+                autoComplete="off"
+              />
+            </Field>
           </Card>
           <Card className="space-y-4">
             <h2 className="font-semibold">Payment</h2>
@@ -184,7 +198,6 @@ export default function SettingsPage() {
       {!readOnly && (
         <div className="mt-6 grid gap-6 lg:grid-cols-2">
           <AliExpressConnection />
-          <AliExpressCountries />
         </div>
       )}
     </>
