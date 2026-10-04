@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState, type FormEvent } from "react";
-import { Plus } from "lucide-react";
+import { Download, Plus } from "lucide-react";
 import type { Paginated, ProductStatus, ProductSummaryDto } from "@ecom/shared";
 import { adminApi } from "@/lib/admin-api";
 import { useMoney } from "@/lib/use-money";
@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 import { Button, buttonClass } from "@/components/ui/button";
 import { Input, Select } from "@/components/ui/form";
 import { Alert, Badge } from "@/components/ui/misc";
-import { PageHeader } from "@/components/admin/admin-shell";
+import { PageHeader, useAdmin } from "@/components/admin/admin-shell";
 import { revalidateStorefront } from "../../actions";
 
 const STATUS_TONE = { ACTIVE: "success", DRAFT: "warning", ARCHIVED: "neutral" } as const;
@@ -23,6 +23,7 @@ function ProductsTable() {
   const pathname = usePathname();
   const params = useSearchParams();
   const { format } = useMoney();
+  const admin = useAdmin();
 
   const q = params.get("q") ?? "";
   const status = (params.get("status") as ProductStatus | null) ?? undefined;
@@ -71,9 +72,16 @@ function ProductsTable() {
       <PageHeader
         title="Products"
         actions={
-          <Link href="/admin/products/new" className={buttonClass()}>
-            <Plus className="size-4" /> New product
-          </Link>
+          <>
+            {admin.role === "ADMIN" && (
+              <Link href="/admin/products/import" className={buttonClass("secondary")}>
+                <Download className="size-4" /> Import from AliExpress
+              </Link>
+            )}
+            <Link href="/admin/products/new" className={buttonClass()}>
+              <Plus className="size-4" /> New product
+            </Link>
+          </>
         }
       />
 

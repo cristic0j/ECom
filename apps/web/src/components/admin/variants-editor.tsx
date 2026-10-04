@@ -3,6 +3,8 @@
 import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/form";
+import { useMoney } from "@/lib/use-money";
+import { parseMoneyToMinor } from "@/lib/utils";
 
 /** Variant row as edited in the form: money kept as strings until save. */
 export type VariantRow = {
@@ -15,6 +17,10 @@ export type VariantRow = {
   options: Record<string, string>;
   isDefault: boolean;
   inStock: boolean;
+  /** What the store pays the supplier */
+  cost: string;
+  /** Set for options imported from AliExpress; kept through renames */
+  supplierSkuId?: string | null;
 };
 
 export type OptionDef = { name: string; values: string };
@@ -56,6 +62,7 @@ export function generateVariants(options: OptionDef[], current: VariantRow[], sk
       options: opts,
       isDefault: false,
       inStock: true,
+      cost: current[0]?.cost ?? "",
     };
   });
   if (rows.length && !rows.some((r) => r.isDefault)) rows[0] = { ...rows[0], isDefault: true };
@@ -80,6 +87,7 @@ export function VariantsEditor({
   onRowsChange,
   onGenerate,
   errors,
+  supplierName,
 }: {
   options: OptionDef[];
   onOptionsChange: (o: OptionDef[]) => void;
@@ -87,8 +95,16 @@ export function VariantsEditor({
   onRowsChange: (r: VariantRow[]) => void;
   onGenerate: () => void;
   errors: Record<number, string>;
+  /** For imported products: options without a supplier link are flagged, since they can't be ordered there */
+  supplierName?: string;
 }) {
+  const { format } = useMoney();
   const hasOptions = options.length > 0;
+  const profit = (r: VariantRow) => {
+    const price = parseMoneyToMinor(r.price);
+    const cost = r.cost.trim() ? parseMoneyToMinor(r.cost) : NaN;
+    return Number.isNaN(price) || Number.isNaN(cost) ? null : price - cost;
+  };
   const updateRow = (i: number, patch: Partial<VariantRow>) =>
     onRowsChange(rows.map((r, j) => (j === i ? { ...r, ...patch } : patch.isDefault ? { ...r, isDefault: false } : r)));
   const updateOption = (i: number, patch: Partial<OptionDef>) =>
@@ -148,6 +164,7 @@ export function VariantsEditor({
               <th className="py-2 pr-2 font-medium">SKU</th>
               <th className="py-2 pr-2 font-medium">Price</th>
               <th className="py-2 pr-2 font-medium">Compare at</th>
+              <th className="py-2 pr-2 font-medium">Cost</th>
               <th className="py-2 pr-2 font-medium">In stock</th>
               {hasOptions && (
                 <th className="py-2 font-medium">
@@ -177,6 +194,9 @@ export function VariantsEditor({
                     className="min-w-32"
                   />
                   {errors[i] && <p className="mt-1 text-xs text-red-600">{errors[i]}</p>}
+                  {supplierName && !r.supplierSkuId && (
+                    <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">Not linked to {supplierName}</p>
+                  )}
                 </td>
                 <td className="py-1.5 pr-2">
                   <Input
@@ -187,6 +207,11 @@ export function VariantsEditor({
                     onChange={(e) => updateRow(i, { price: e.target.value })}
                     className="w-28"
                   />
+                  {profit(r) !== null && (
+                    <p className={`mt-1 text-xs ${profit(r)! < 0 ? "text-red-600" : "text-muted-foreground"}`}>
+                      {profit(r)! < 0 ? "Loss" : "Profit"} {format(Math.abs(profit(r)!))}
+                    </p>
+                  )}
                 </td>
                 <td className="py-1.5 pr-2">
                   <Input
@@ -196,6 +221,16 @@ export function VariantsEditor({
                     value={r.compareAt}
                     onChange={(e) => updateRow(i, { compareAt: e.target.value })}
                     className="w-28"
+                  />
+                </td>
+                <td className="py-1.5 pr-2">
+                  <Input
+                    aria-label={`Cost for ${r.title}`}
+                    inputMode="decimal"
+                    placeholder="—"
+                    value={r.cost}
+                    onChange={(e) => updateRow(i, { cost: e.target.value })}
+                    className="w-24"
                   />
                 </td>
                 <td className="py-1.5 pr-2 pt-4">
@@ -225,6 +260,7 @@ export function VariantsEditor({
       </div>
       <p className="text-xs text-muted-foreground">
         Untick &ldquo;In stock&rdquo; when your supplier runs out. Customers can still see the item but can&apos;t buy it.
+        Cost is what you pay your supplier; only you see it.
       </p>
     </div>
   );

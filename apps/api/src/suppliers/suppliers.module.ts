@@ -1,11 +1,22 @@
-import { Body, Controller, Delete, Get, HttpCode, Module, Post, Query, Res, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, HttpCode, Module, Post, Put, Query, Res, UseGuards } from "@nestjs/common";
 import { ApiCookieAuth, ApiTags } from "@nestjs/swagger";
 import type { Response } from "express";
-import { supplierConnectSchema, type AdminUserDto, type SupplierConnectInput } from "@ecom/shared";
+import {
+  supplierConnectSchema,
+  supplierImportSchema,
+  supplierSettingsSchema,
+  type AdminUserDto,
+  type SupplierConnectInput,
+  type SupplierImportInput,
+  type SupplierSettings,
+} from "@ecom/shared";
 import { AdminAuthGuard, CurrentAdmin, Roles } from "../auth/admin-auth.guard";
 import { ZodValidationPipe } from "../common/zod-validation.pipe";
 import { ALIEXPRESS_CLIENT } from "./aliexpress-client";
 import { AliExpressService } from "./aliexpress.service";
+import { AliExpressImportService } from "./aliexpress-import.service";
+import { CatalogModule } from "../catalog/catalog.module";
+import { MediaModule } from "../media/media.module";
 import { parseAuthorizationInput } from "./authorization-input";
 import { createAliExpressClient } from "./create-client";
 
@@ -15,7 +26,10 @@ import { createAliExpressClient } from "./create-client";
 @Roles("ADMIN")
 @Controller("admin/aliexpress")
 export class AdminAliExpressController {
-  constructor(private readonly aliexpress: AliExpressService) {}
+  constructor(
+    private readonly aliexpress: AliExpressService,
+    private readonly importer: AliExpressImportService,
+  ) {}
 
   @Get()
   status() {
@@ -59,12 +73,30 @@ export class AdminAliExpressController {
   disconnect() {
     return this.aliexpress.disconnect();
   }
+
+  /** The countries products are checked for on import */
+  @Get("settings")
+  settings() {
+    return this.importer.getSettings();
+  }
+
+  @Put("settings")
+  saveSettings(@Body(new ZodValidationPipe(supplierSettingsSchema)) body: SupplierSettings) {
+    return this.importer.saveSettings(body);
+  }
+
+  /** Creates a draft product from a product link; returns it in the admin shape */
+  @Post("import")
+  import(@Body(new ZodValidationPipe(supplierImportSchema)) body: SupplierImportInput) {
+    return this.importer.import(body.url);
+  }
 }
 
 /** Supplier accounts the store orders from (AliExpress). */
 @Module({
+  imports: [CatalogModule, MediaModule],
   controllers: [AdminAliExpressController],
-  providers: [AliExpressService, { provide: ALIEXPRESS_CLIENT, useFactory: createAliExpressClient }],
+  providers: [AliExpressService, AliExpressImportService, { provide: ALIEXPRESS_CLIENT, useFactory: createAliExpressClient }],
   exports: [AliExpressService],
 })
 export class SuppliersModule {}

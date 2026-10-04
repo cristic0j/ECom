@@ -56,6 +56,38 @@ export interface ProductDto {
   updatedAt: string;
 }
 
+/** Admin view of a variant: adds the supplier cost (never sent to the storefront). */
+export interface AdminVariantDto extends VariantDto {
+  costMinor: number | null;
+  /** Set on imported products; links the option to the supplier's */
+  supplierSkuId: string | null;
+}
+
+export interface SupplierCountryInfo {
+  /** ISO 3166-1 alpha-2 */
+  country: string;
+  /** False when the supplier doesn't sell or ship the product there */
+  available: boolean;
+  /** Cheapest option's cost for this country, in the store currency */
+  costMinor: number | null;
+  /** Estimated delivery time in days */
+  deliveryDays: number | null;
+}
+
+export interface SupplierProductInfo {
+  supplier: "aliexpress";
+  productId: string;
+  url: string;
+  importedAt: string;
+  countries: SupplierCountryInfo[];
+}
+
+/** Admin view of a product: costs and where it was imported from. */
+export interface AdminProductDto extends ProductDto {
+  variants: AdminVariantDto[];
+  supplier: SupplierProductInfo | null;
+}
+
 export interface Paginated<T> {
   items: T[];
   total: number;

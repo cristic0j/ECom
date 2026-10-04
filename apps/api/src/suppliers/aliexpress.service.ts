@@ -4,7 +4,7 @@ import type { SupplierConnection } from "@ecom/db";
 import type { AdminUserDto, SupplierConnectionDto } from "@ecom/shared";
 import { env } from "../config/env";
 import { PrismaService } from "../prisma/prisma.service";
-import { ALIEXPRESS_CLIENT, AliExpressApiError, type AliExpressAuthClient, type AliExpressTokens } from "./aliexpress-client";
+import { ALIEXPRESS_CLIENT, AliExpressApiError, type AliExpressApi, type AliExpressTokens } from "./aliexpress-client";
 import { TokenCrypto } from "./token-crypto";
 
 const PROVIDER = "aliexpress";
@@ -25,7 +25,7 @@ export class AliExpressService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
-    @Inject(ALIEXPRESS_CLIENT) private readonly client: AliExpressAuthClient | null,
+    @Inject(ALIEXPRESS_CLIENT) private readonly client: AliExpressApi | null,
   ) {}
 
   async status(): Promise<SupplierConnectionDto> {
@@ -130,7 +130,7 @@ export class AliExpressService {
     return this.prisma.supplierConnection.findUnique({ where: { provider: PROVIDER } });
   }
 
-  private requireClient(): AliExpressAuthClient {
+  private requireClient(): AliExpressApi {
     if (!this.client) {
       throw new ServiceUnavailableException("AliExpress isn't set up: add ALIEXPRESS_APP_KEY and ALIEXPRESS_APP_SECRET to .env");
     }

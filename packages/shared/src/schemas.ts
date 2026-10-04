@@ -23,6 +23,8 @@ export const variantInputSchema = z.object({
   options: z.record(z.string()).default({}),
   isDefault: z.boolean().default(false),
   inStock: z.boolean().default(true),
+  /** What the store pays the supplier; admin-only, used to show profit */
+  costMinor: z.number().int().nonnegative().nullable().optional(),
 });
 export type VariantInput = z.infer<typeof variantInputSchema>;
 
@@ -196,6 +198,22 @@ export type AdminOrderListQuery = z.infer<typeof adminOrderListQuerySchema>;
 /** Finishing a supplier connection: the address the supplier sent the browser to, or just its `code` value. */
 export const supplierConnectSchema = z.object({ code: z.string().trim().min(1).max(4000) });
 export type SupplierConnectInput = z.infer<typeof supplierConnectSchema>;
+
+const countryCode = z.string().trim().length(2, "Use 2-letter country codes, e.g. NL").toUpperCase();
+
+/** Countries an AliExpress product is checked for on import (cost and delivery time differ per country). */
+export const supplierSettingsSchema = z.object({
+  countries: z
+    .array(countryCode)
+    .min(1, "Add at least one country")
+    .max(10, "Use at most 10 countries")
+    .transform((c) => [...new Set(c)]),
+});
+export type SupplierSettings = z.infer<typeof supplierSettingsSchema>;
+
+/** An AliExpress product link (any form AliExpress shares), or just its product id. */
+export const supplierImportSchema = z.object({ url: z.string().trim().min(1, "Paste a product link").max(2000) });
+export type SupplierImportInput = z.infer<typeof supplierImportSchema>;
 
 export const ALLOWED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif", "image/avif"] as const;
 export const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;

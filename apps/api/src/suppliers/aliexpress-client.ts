@@ -13,11 +13,15 @@ export interface AliExpressTokens {
   account: string;
 }
 
-/** The OAuth part of the AliExpress Open Platform; the e2e tests swap in a fake. */
-export interface AliExpressAuthClient {
+/** What the store uses of the AliExpress Open Platform; the e2e tests swap in a fake. */
+export interface AliExpressApi {
   authorizeUrl(redirectUri: string, state: string): string;
   createToken(code: string): Promise<AliExpressTokens>;
   refreshToken(refreshToken: string): Promise<AliExpressTokens>;
+  /** A business API call, e.g. "aliexpress.ds.product.get"; returns the body of `<method>_response`. */
+  call<T>(method: string, params: Record<string, string>, session: string): Promise<T>;
+  /** Downloads a product image from AliExpress's image servers. */
+  fetchImage(url: string): Promise<Buffer>;
 }
 
 export class AliExpressApiError extends Error {
@@ -68,7 +72,7 @@ export function parseTokenResponse(body: TokenResponse, now = Date.now()): AliEx
   };
 }
 
-export class AliExpressClient implements AliExpressAuthClient {
+export class AliExpressClient implements AliExpressApi {
   constructor(
     private readonly appKey: string,
     private readonly appSecret: string,
@@ -91,6 +95,37 @@ export class AliExpressClient implements AliExpressAuthClient {
 
   refreshToken(refreshToken: string) {
     return this.system("/auth/token/refresh", { refresh_token: refreshToken });
+  }
+
+  async call<T>(method: string, extra: Record<string, string>, session: string): Promise<T> {
+    const params: Record<string, string> = {
+      app_key: this.appKey,
+      timestamp: String(Date.now()),
+      sign_method: "sha256",
+      method,
+      session,
+      ...extra,
+    };
+    params.sign = signParams(params, this.appSecret);
+    const res = await fetch(`${GATEWAY}/sync`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded;charset=utf-8" },
+      body: new URLSearchParams(params),
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!res.ok) throw new AliExpressApiError(String(res.status), "request failed");
+    const body = (await res.json()) as Record<string, unknown>;
+    const error = body.error_response as { code?: string; msg?: string } | undefined;
+    if (error) throw new AliExpressApiError(error.code ?? "unknown", error.msg ?? "request failed");
+    const result = body[`${method.replaceAll(".", "_")}_response`];
+    if (!result) throw new AliExpressApiError("unknown", "unexpected response");
+    return result as T;
+  }
+
+  async fetchImage(url: string): Promise<Buffer> {
+    const res = await fetch(url, { signal: AbortSignal.timeout(15_000) });
+    if (!res.ok) throw new AliExpressApiError(String(res.status), `image download failed`);
+    return Buffer.from(await res.arrayBuffer());
   }
 
   private async system(path: string, extra: Record<string, string>): Promise<AliExpressTokens> {

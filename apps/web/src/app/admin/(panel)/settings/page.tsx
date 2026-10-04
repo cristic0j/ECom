@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Field, Input, Textarea } from "@/components/ui/form";
 import { Alert, Card } from "@/components/ui/misc";
 import { PageHeader, useAdmin } from "@/components/admin/admin-shell";
-import { AliExpressConnection } from "@/components/admin/aliexpress-connection";
+import { AliExpressConnection, AliExpressCountries } from "@/components/admin/aliexpress-connection";
 import { revalidateStorefront } from "../../actions";
 
 const defaults = {
@@ -184,6 +184,7 @@ export default function SettingsPage() {
       {!readOnly && (
         <div className="mt-6 grid gap-6 lg:grid-cols-2">
           <AliExpressConnection />
+          <AliExpressCountries />
         </div>
       )}
     </>

@@ -1,5 +1,13 @@
 import type { Category, Prisma } from "@ecom/db";
-import type { CategoryDto, ImageDto, ProductDto, ProductSummaryDto, VariantDto } from "@ecom/shared";
+import type {
+  AdminProductDto,
+  CategoryDto,
+  ImageDto,
+  ProductDto,
+  ProductSummaryDto,
+  SupplierProductInfo,
+  VariantDto,
+} from "@ecom/shared";
 
 export const productDetailInclude = {
   variants: { orderBy: { position: "asc" } },
@@ -48,6 +56,19 @@ export function toProductDto(p: ProductDetail): ProductDto {
     images: p.images.map(toImageDto),
     createdAt: p.createdAt.toISOString(),
     updatedAt: p.updatedAt.toISOString(),
+  };
+}
+
+/** Admin-only: adds supplier costs and import details. Never use for storefront responses. */
+export function toAdminProductDto(p: ProductDetail): AdminProductDto {
+  const supplierData = p.supplierData as Omit<SupplierProductInfo, "supplier" | "productId"> | null;
+  return {
+    ...toProductDto(p),
+    variants: p.variants.map((v) => ({ ...toVariantDto(v), costMinor: v.costMinor, supplierSkuId: v.supplierSkuId })),
+    supplier:
+      p.supplier === "aliexpress" && p.supplierProductId && supplierData
+        ? { ...supplierData, supplier: "aliexpress", productId: p.supplierProductId }
+        : null,
   };
 }
 

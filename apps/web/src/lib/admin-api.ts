@@ -2,6 +2,7 @@
 
 import type {
   AdminOrderListQuery,
+  AdminProductDto,
   AdminProductListQuery,
   AdminUserDto,
   CategoryDto,
@@ -11,12 +12,12 @@ import type {
   OrderTrackingInput,
   OrderSummaryDto,
   Paginated,
-  ProductDto,
   ProductInput,
   ProductStatus,
   ProductSummaryDto,
   StoreSettings,
   SupplierConnectionDto,
+  SupplierSettings,
 } from "@ecom/shared";
 import { json, request, toQuery } from "./api-client";
 
@@ -29,11 +30,12 @@ export const adminApi = {
 
   listProducts: (q: Partial<AdminProductListQuery>) =>
     request<Paginated<ProductSummaryDto>>(`/admin/products${toQuery(q)}`),
-  getProduct: (id: string) => request<ProductDto>(`/admin/products/${id}`),
-  createProduct: (input: ProductInput) => request<ProductDto>("/admin/products", json("POST", input)),
-  updateProduct: (id: string, input: ProductInput) => request<ProductDto>(`/admin/products/${id}`, json("PUT", input)),
+  getProduct: (id: string) => request<AdminProductDto>(`/admin/products/${id}`),
+  createProduct: (input: ProductInput) => request<AdminProductDto>("/admin/products", json("POST", input)),
+  updateProduct: (id: string, input: ProductInput) =>
+    request<AdminProductDto>(`/admin/products/${id}`, json("PUT", input)),
   setProductStatus: (id: string, status: ProductStatus) =>
-    request<ProductDto>(`/admin/products/${id}/status`, json("PATCH", { status })),
+    request<AdminProductDto>(`/admin/products/${id}/status`, json("PATCH", { status })),
   deleteProduct: (id: string) => request<void>(`/admin/products/${id}`, json("DELETE")),
 
   listCategories: () => request<CategoryDto[]>("/admin/categories"),
@@ -58,6 +60,10 @@ export const adminApi = {
   aliexpressConnect: (code: string) =>
     request<SupplierConnectionDto>("/admin/aliexpress/connect", json("POST", { code })),
   aliexpressDisconnect: () => request<void>("/admin/aliexpress", json("DELETE")),
+  aliexpressSettings: () => request<SupplierSettings>("/admin/aliexpress/settings"),
+  saveAliexpressSettings: (settings: SupplierSettings) =>
+    request<SupplierSettings>("/admin/aliexpress/settings", json("PUT", settings)),
+  aliexpressImport: (url: string) => request<AdminProductDto>("/admin/aliexpress/import", json("POST", { url })),
 
   uploadImage: (file: File) => {
     const form = new FormData();

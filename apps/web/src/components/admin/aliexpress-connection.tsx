@@ -168,3 +168,64 @@ export function AliExpressConnection() {
     </Card>
   );
 }
+
+/** Admin → Settings: the countries an imported product's cost and delivery time are checked for. */
+export function AliExpressCountries() {
+  const [countries, setCountries] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    adminApi
+      .aliexpressSettings()
+      .then((s) => setCountries(s.countries.join(", ")))
+      .catch((e) => setError(e.message));
+  }, []);
+
+  const save = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    setSaved(false);
+    try {
+      const list = countries.split(/[\s,]+/).filter(Boolean);
+      const result = await adminApi.saveAliexpressSettings({ countries: list });
+      setCountries(result.countries.join(", "));
+      setSaved(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Save failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Card className="space-y-4">
+      <h2 className="font-semibold">AliExpress import countries</h2>
+      <p className="text-sm text-muted-foreground">
+        When you import a product, its cost and delivery time are checked for these countries. Each option&apos;s cost
+        is the highest of them, so your profit figures stay on the safe side.
+      </p>
+      {error && <Alert>{error}</Alert>}
+      {saved && (
+        <p role="status" className="text-sm text-green-700 dark:text-green-400">
+          Countries saved.
+        </p>
+      )}
+      <form onSubmit={save} className="space-y-3">
+        <Field label="Countries" htmlFor="aliexpressCountries" hint="2-letter codes, up to 10, e.g. NL, DE, FR, US">
+          <Input
+            id="aliexpressCountries"
+            value={countries}
+            onChange={(e) => setCountries(e.target.value.toUpperCase())}
+            autoComplete="off"
+          />
+        </Field>
+        <Button type="submit" variant="secondary" disabled={busy}>
+          Save countries
+        </Button>
+      </form>
+    </Card>
+  );
+}

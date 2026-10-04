@@ -5,46 +5,9 @@ import { hash } from "@node-rs/argon2";
 import { AppModule } from "../src/app.module";
 import { configureApp } from "../src/configure-app";
 import { PrismaService } from "../src/prisma/prisma.service";
-import {
-  ALIEXPRESS_CLIENT,
-  AliExpressApiError,
-  type AliExpressAuthClient,
-  type AliExpressTokens,
-} from "../src/suppliers/aliexpress-client";
+import { ALIEXPRESS_CLIENT } from "../src/suppliers/aliexpress-client";
 import { AliExpressService } from "../src/suppliers/aliexpress.service";
-
-const HOUR = 3_600_000;
-
-/** Stands in for AliExpress: "good-*" codes work once, and every refresh hands out new tokens. */
-class FakeAliExpress implements AliExpressAuthClient {
-  used = new Set<string>();
-  refreshes: string[] = [];
-  accessLifetimeMs = 30 * 24 * HOUR;
-  down = false;
-
-  authorizeUrl(redirectUri: string, state: string) {
-    return `https://ae.test/oauth/authorize?${new URLSearchParams({ redirect_uri: redirectUri, state })}`;
-  }
-  async createToken(code: string) {
-    if (this.down) throw new TypeError("fetch failed");
-    if (!code.startsWith("good-") || this.used.has(code)) throw new AliExpressApiError("InvalidCode", "Invalid authorization code");
-    this.used.add(code);
-    return this.tokens(`at-${code}`, `rt-${code}`);
-  }
-  async refreshToken(refreshToken: string) {
-    this.refreshes.push(refreshToken);
-    return this.tokens(`at-refreshed-${this.refreshes.length}`, `rt-refreshed-${this.refreshes.length}`);
-  }
-  private tokens(accessToken: string, refreshToken: string): AliExpressTokens {
-    return {
-      accessToken,
-      refreshToken,
-      accessExpiresAt: new Date(Date.now() + this.accessLifetimeMs),
-      refreshExpiresAt: new Date(Date.now() + 365 * 24 * HOUR),
-      account: "shop_owner",
-    };
-  }
-}
+import { FakeAliExpress, HOUR } from "./fake-aliexpress";
 
 describe("AliExpress connection (e2e)", () => {
   let app: NestExpressApplication;

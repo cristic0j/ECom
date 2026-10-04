@@ -3,14 +3,14 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import type { ProductDto } from "@ecom/shared";
+import type { AdminProductDto } from "@ecom/shared";
 import { adminApi } from "@/lib/admin-api";
 import { Alert } from "@/components/ui/misc";
 import { ProductEditor } from "@/components/admin/product-editor";
 
 export default function EditProductPage() {
   const { id } = useParams<{ id: string }>();
-  const [product, setProduct] = useState<ProductDto | null>(null);
+  const [product, setProduct] = useState<AdminProductDto | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {

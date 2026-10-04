@@ -36,7 +36,7 @@ export class AdminProductsController {
 
   @Get(":id")
   get(@Param("id") id: string) {
-    return this.products.getById(id);
+    return this.products.getAdminById(id);
   }
 
   @Post()

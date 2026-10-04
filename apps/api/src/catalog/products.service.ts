@@ -1,11 +1,12 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import type { Prisma, ProductStatus } from "@ecom/db";
-import type { AdminProductListQuery, Paginated, ProductDto, ProductSummaryDto } from "@ecom/shared";
+import type { AdminProductDto, AdminProductListQuery, Paginated, ProductDto, ProductSummaryDto } from "@ecom/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import {
   collectDescendantIds,
   productDetailInclude,
   productSummaryInclude,
+  toAdminProductDto,
   toProductDto,
   toProductSummaryDto,
 } from "./mappers";
@@ -52,10 +53,11 @@ export class ProductsService {
     return toProductDto(product);
   }
 
-  async getById(id: string): Promise<ProductDto> {
+  /** Admin view, with supplier costs. */
+  async getAdminById(id: string): Promise<AdminProductDto> {
     const product = await this.prisma.product.findUnique({ where: { id }, include: productDetailInclude });
     if (!product) throw new NotFoundException("Product not found");
-    return toProductDto(product);
+    return toAdminProductDto(product);
   }
 
   /** Slugs of active products, for the sitemap. */

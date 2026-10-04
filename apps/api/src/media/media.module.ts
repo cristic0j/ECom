@@ -5,5 +5,6 @@ import { createStorageDriver, STORAGE_DRIVER } from "./storage";
 @Module({
   controllers: [MediaController],
   providers: [{ provide: STORAGE_DRIVER, useFactory: createStorageDriver }],
+  exports: [STORAGE_DRIVER],
 })
 export class MediaModule {}

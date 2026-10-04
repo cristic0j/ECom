@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import type { ProductStatus } from "@ecom/db";
-import type { ProductDto, ProductInput } from "@ecom/shared";
+import type { AdminProductDto, ProductInput } from "@ecom/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import { ProductsService } from "../catalog/products.service";
 import { minPrice, normalizeProductInput } from "./normalize-product";
@@ -12,7 +12,7 @@ export class AdminProductsService {
     private readonly products: ProductsService,
   ) {}
 
-  async create(raw: ProductInput): Promise<ProductDto> {
+  async create(raw: ProductInput): Promise<AdminProductDto> {
     const input = normalizeProductInput(raw);
     const product = await this.prisma.product.create({
       data: {
@@ -29,14 +29,14 @@ export class AdminProductsService {
         images: { create: input.images.map((img, position) => ({ ...img, position })) },
       },
     });
-    return this.products.getById(product.id);
+    return this.products.getAdminById(product.id);
   }
 
   /**
    * Full replace of the product. Variants are matched by id so existing variant ids stay
    * stable (future orders/inventory will reference them); unmatched ones are deleted.
    */
-  async update(id: string, raw: ProductInput): Promise<ProductDto> {
+  async update(id: string, raw: ProductInput): Promise<AdminProductDto> {
     const input = normalizeProductInput(raw);
 
     await this.prisma.$transaction(async (tx) => {
@@ -78,12 +78,12 @@ export class AdminProductsService {
       });
     });
 
-    return this.products.getById(id);
+    return this.products.getAdminById(id);
   }
 
-  async setStatus(id: string, status: ProductStatus): Promise<ProductDto> {
+  async setStatus(id: string, status: ProductStatus): Promise<AdminProductDto> {
     await this.prisma.product.update({ where: { id }, data: { status } });
-    return this.products.getById(id);
+    return this.products.getAdminById(id);
   }
 
   async remove(id: string): Promise<void> {

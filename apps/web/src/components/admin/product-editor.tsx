@@ -4,8 +4,16 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { ExternalLink, Plus, Trash2 } from "lucide-react";
-import { productInputSchema, type CategoryDto, type ProductDto, type ProductInput, type ProductStatus } from "@ecom/shared";
+import {
+  productInputSchema,
+  type AdminProductDto,
+  type CategoryDto,
+  type ProductInput,
+  type ProductStatus,
+  type SupplierProductInfo,
+} from "@ecom/shared";
 import { adminApi, ApiRequestError } from "@/lib/admin-api";
+import { useMoney } from "@/lib/use-money";
 import { minorToInput, parseMoneyToMinor, slugify } from "@/lib/utils";
 import { Button, buttonClass } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/form";
@@ -33,7 +41,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-const toRows = (p?: ProductDto): VariantRow[] =>
+const toRows = (p?: AdminProductDto): VariantRow[] =>
   p?.variants.map((v) => ({
     key: newRowKey(),
     id: v.id,
@@ -44,11 +52,75 @@ const toRows = (p?: ProductDto): VariantRow[] =>
     options: v.options,
     isDefault: v.isDefault,
     inStock: v.inStock,
+    cost: minorToInput(v.costMinor),
+    supplierSkuId: v.supplierSkuId,
   })) ?? [
-    { key: newRowKey(), sku: "", title: "Default", price: "", compareAt: "", options: {}, isDefault: true, inStock: true },
+    {
+      key: newRowKey(),
+      sku: "",
+      title: "Default",
+      price: "",
+      compareAt: "",
+      options: {},
+      isDefault: true,
+      inStock: true,
+      cost: "",
+    },
   ];
 
-export function ProductEditor({ product }: { product?: ProductDto }) {
+const countryName = (code: string) => {
+  try {
+    return new Intl.DisplayNames(["en"], { type: "region" }).of(code) ?? code;
+  } catch {
+    return code;
+  }
+};
+
+/** Where an imported product comes from: the supplier link and what it costs and takes per country. */
+function SupplierSection({ info }: { info: SupplierProductInfo }) {
+  const { format } = useMoney();
+  return (
+    <Section title="AliExpress">
+      <a href={info.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sm underline">
+        View on AliExpress <ExternalLink className="size-3.5" />
+      </a>
+      <table className="w-full text-sm">
+        <thead className="text-left text-muted-foreground">
+          <tr>
+            <th className="py-1 font-medium">Ships to</th>
+            <th className="py-1 font-medium">Cost from</th>
+            <th className="py-1 font-medium">Delivery</th>
+          </tr>
+        </thead>
+        <tbody>
+          {info.countries.map((c) => (
+            <tr key={c.country} className={c.available ? undefined : "text-muted-foreground"}>
+              <td className="py-1" title={countryName(c.country)}>
+                {c.country}
+              </td>
+              {c.available ? (
+                <>
+                  <td className="py-1">{c.costMinor !== null ? format(c.costMinor) : "—"}</td>
+                  <td className="py-1">{c.deliveryDays ? `${c.deliveryDays} days` : "—"}</td>
+                </>
+              ) : (
+                <td className="py-1" colSpan={2}>
+                  Not sold there
+                </td>
+              )}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="text-xs text-muted-foreground">
+        Imported {new Date(info.importedAt).toLocaleDateString()}. Each option&apos;s cost is the highest of these
+        countries. Only you see this.
+      </p>
+    </Section>
+  );
+}
+
+export function ProductEditor({ product }: { product?: AdminProductDto }) {
   const router = useRouter();
   const admin = useAdmin();
   const isNew = !product;
@@ -100,10 +172,22 @@ export function ProductEditor({ product }: { product?: ProductDto }) {
     const variants = rows.map((r, i) => {
       const priceMinor = parseMoneyToMinor(r.price);
       const compareAtMinor = r.compareAt.trim() ? parseMoneyToMinor(r.compareAt) : null;
+      const costMinor = r.cost.trim() ? parseMoneyToMinor(r.cost) : null;
       if (!r.sku.trim()) vErrs[i] = "SKU is required";
       else if (Number.isNaN(priceMinor)) vErrs[i] = "Enter a valid price, e.g. 19.99";
       else if (compareAtMinor !== null && Number.isNaN(compareAtMinor)) vErrs[i] = "Invalid compare-at price";
-      return { id: r.id, sku: r.sku.trim(), title: r.title || "Default", priceMinor, compareAtMinor, options: r.options, isDefault: r.isDefault, inStock: r.inStock };
+      else if (costMinor !== null && Number.isNaN(costMinor)) vErrs[i] = "Enter a valid cost, e.g. 4.69";
+      return {
+        id: r.id,
+        sku: r.sku.trim(),
+        title: r.title || "Default",
+        priceMinor,
+        compareAtMinor,
+        costMinor,
+        options: r.options,
+        isDefault: r.isDefault,
+        inStock: r.inStock,
+      };
     });
 
     const attrs: Record<string, string> = {};
@@ -193,6 +277,12 @@ export function ProductEditor({ product }: { product?: ProductDto }) {
         }
       />
 
+      {saved?.supplier && saved.status === "DRAFT" && (
+        <p className="mb-4 rounded-(--radius) border border-border bg-muted px-4 py-3 text-sm">
+          Imported from AliExpress as a draft. Check the name, photos, options and prices (they start at about 2.5× your
+          cost), then set the status to Active and save.
+        </p>
+      )}
       {formError && <Alert className="mb-4">{formError}</Alert>}
       {savedAt && !formError && (
         <p role="status" className="mb-4 text-sm text-green-700 dark:text-green-400">
@@ -233,6 +323,7 @@ export function ProductEditor({ product }: { product?: ProductDto }) {
               onRowsChange={setRows}
               onGenerate={onGenerate}
               errors={variantErrors}
+              supplierName={saved?.supplier ? "AliExpress" : undefined}
             />
           </Section>
 
@@ -276,6 +367,8 @@ export function ProductEditor({ product }: { product?: ProductDto }) {
               <option value="ARCHIVED">Archived</option>
             </Select>
           </Section>
+
+          {saved?.supplier && <SupplierSection info={saved.supplier} />}
 
           <Section title="Categories">
             {categories.length === 0 ? (
