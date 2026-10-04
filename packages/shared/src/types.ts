@@ -86,6 +86,46 @@ export interface SupplierProductInfo {
   countries: SupplierCountryInfo[];
 }
 
+export interface SupplierCategoryDto {
+  id: string;
+  name: string;
+  children: { id: string; name: string }[];
+}
+
+export interface SupplierSearchItemDto {
+  productId: string;
+  title: string;
+  image: string | null;
+  /** The supplier's price to the store's first delivery country, in the store currency */
+  costMinor: number | null;
+  /** e.g. "10,000+" */
+  sold: string | null;
+  /** 0–5 */
+  rating: number | null;
+  /** Share of positive reviews, 0–100 */
+  positiveRate: number | null;
+  url: string;
+  /** Set when this product is already in the store */
+  importedProductId: string | null;
+}
+
+export interface SupplierSearchResultDto {
+  items: SupplierSearchItemDto[];
+  page: number;
+  /** AliExpress caps how deep a search goes; null when it doesn't say */
+  totalPages: number | null;
+  /** The country costs are shown for */
+  country: string;
+  /** Results on this page left out by the price, sales and review filters */
+  hidden: number;
+  /**
+   * "search": AliExpress's search (words and/or a subcategory). "bestsellers": no words and a main category or
+   * none, from AliExpress's bestseller list, which sorts by most sold or keeps AliExpress's order ("reviews" acts as
+   * AliExpress's order there).
+   */
+  source: "search" | "bestsellers";
+}
+
 /** Admin view of a product: costs and where it was imported from. */
 export interface AdminProductDto extends ProductDto {
   variants: AdminVariantDto[];

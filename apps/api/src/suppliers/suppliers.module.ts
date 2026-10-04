@@ -4,15 +4,18 @@ import type { Response } from "express";
 import {
   supplierConnectSchema,
   supplierImportSchema,
+  supplierSearchQuerySchema,
   type AdminUserDto,
   type SupplierConnectInput,
   type SupplierImportInput,
+  type SupplierSearchQuery,
 } from "@ecom/shared";
 import { AdminAuthGuard, CurrentAdmin, Roles } from "../auth/admin-auth.guard";
 import { ZodValidationPipe } from "../common/zod-validation.pipe";
 import { ALIEXPRESS_CLIENT } from "./aliexpress-client";
 import { AliExpressService } from "./aliexpress.service";
 import { AliExpressImportService } from "./aliexpress-import.service";
+import { AliExpressSearchService } from "./aliexpress-search.service";
 import { CatalogModule } from "../catalog/catalog.module";
 import { MediaModule } from "../media/media.module";
 import { parseAuthorizationInput } from "./authorization-input";
@@ -27,6 +30,7 @@ export class AdminAliExpressController {
   constructor(
     private readonly aliexpress: AliExpressService,
     private readonly importer: AliExpressImportService,
+    private readonly finder: AliExpressSearchService,
   ) {}
 
   @Get()
@@ -72,6 +76,22 @@ export class AdminAliExpressController {
     return this.aliexpress.disconnect();
   }
 
+  @Get("categories")
+  categories() {
+    return this.finder.categories();
+  }
+
+  @Get("search")
+  search(@Query(new ZodValidationPipe(supplierSearchQuerySchema)) query: SupplierSearchQuery) {
+    return this.finder.search(query);
+  }
+
+  /** Cost and delivery per delivery country, before importing */
+  @Get("lookup/:productId")
+  lookup(@Param("productId") productId: string) {
+    return this.importer.check(productId);
+  }
+
   /** Creates a draft product from a product link; returns it in the admin shape */
   @Post("import")
   import(@Body(new ZodValidationPipe(supplierImportSchema)) body: SupplierImportInput) {
@@ -90,7 +110,12 @@ export class AdminAliExpressController {
 @Module({
   imports: [CatalogModule, MediaModule],
   controllers: [AdminAliExpressController],
-  providers: [AliExpressService, AliExpressImportService, { provide: ALIEXPRESS_CLIENT, useFactory: createAliExpressClient }],
+  providers: [
+    AliExpressService,
+    AliExpressImportService,
+    AliExpressSearchService,
+    { provide: ALIEXPRESS_CLIENT, useFactory: createAliExpressClient },
+  ],
   exports: [AliExpressService],
 })
 export class SuppliersModule {}

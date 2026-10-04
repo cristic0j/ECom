@@ -210,5 +210,32 @@ export type SupplierConnectInput = z.infer<typeof supplierConnectSchema>;
 export const supplierImportSchema = z.object({ url: z.string().trim().min(1, "Paste a product link").max(2000) });
 export type SupplierImportInput = z.infer<typeof supplierImportSchema>;
 
+/**
+ * Searching AliExpress from the admin: words, a category, both, or neither (bestsellers across all categories).
+ * AliExpress's search can't filter by price,
+ * sales or reviews for a dropshipping app, so minCost/maxCost (minor units), minSold and reviews only drop
+ * results from the page it returns.
+ */
+export const supplierSearchQuerySchema = z
+  .object({
+    q: z.string().trim().max(100).default(""),
+    categoryId: z
+      .string()
+      .regex(/^\d{1,12}$/)
+      .optional(),
+    sort: z.enum(["best", "orders", "reviews"]).default("orders"),
+    page: z.coerce.number().int().min(1).max(50).default(1),
+    minCost: z.coerce.number().int().nonnegative().optional(),
+    maxCost: z.coerce.number().int().nonnegative().optional(),
+    minSold: z.coerce.number().int().nonnegative().optional(),
+    /** good: ★4+ or 90%+ positive; excellent: ★4.5+ or 95%+ positive */
+    reviews: z.enum(["good", "excellent"]).optional(),
+  })
+  .refine((q) => q.minCost === undefined || q.maxCost === undefined || q.minCost <= q.maxCost, {
+    message: "The lowest price must be below the highest",
+    path: ["maxCost"],
+  });
+export type SupplierSearchQuery = z.infer<typeof supplierSearchQuerySchema>;
+
 export const ALLOWED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif", "image/avif"] as const;
 export const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;

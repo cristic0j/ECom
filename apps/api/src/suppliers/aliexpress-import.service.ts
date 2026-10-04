@@ -8,7 +8,7 @@ import {
   ServiceUnavailableException,
 } from "@nestjs/common";
 import type { Prisma } from "@ecom/db";
-import { MAX_UPLOAD_BYTES, type AdminProductDto } from "@ecom/shared";
+import { MAX_UPLOAD_BYTES, type AdminProductDto, type SupplierCountryInfo } from "@ecom/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import { ProductsService } from "../catalog/products.service";
 import { SettingsService } from "../settings/settings.module";
@@ -187,6 +187,19 @@ export class AliExpressImportService {
     ]);
     this.logger.log(`Re-checked AliExpress product ${product.supplierProductId}`);
     return this.products.getAdminById(id);
+  }
+
+  /** Cost and delivery per delivery country for a product that isn't in the store (the search page's "Check delivery"). */
+  async check(productId: string): Promise<SupplierCountryInfo[]> {
+    if (!/^\d{6,20}$/.test(productId)) throw new BadRequestException("Not an AliExpress product id");
+    const { currency } = await this.settings.commerce();
+    const answers = await this.lookUp(this.requireClient(), productId);
+    try {
+      assertCurrency(answers, currency);
+    } catch (err) {
+      throw this.asHttpError(err);
+    }
+    return countryTable(answers);
   }
 
   /** The product as AliExpress sells it to each delivery country; null where it doesn't. */

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState, type FormEvent } from "react";
+import { Suspense, useEffect, useState, type FormEvent } from "react";
 import type { SupplierConnectionDto } from "@ecom/shared";
 import { storeConfig } from "@store-config";
 import { adminApi } from "@/lib/admin-api";
@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/form";
 import { Alert, Card } from "@/components/ui/misc";
 import { PageHeader, useAdmin } from "@/components/admin/admin-shell";
+import { AliExpressSearch } from "@/components/admin/aliexpress-search";
 
 export default function ImportProductPage() {
   const router = useRouter();
@@ -44,26 +45,41 @@ export default function ImportProductPage() {
 
   if (admin.role !== "ADMIN") return <Alert>Only admins can import products.</Alert>;
 
+  if (!status || !status.connected) {
+    return (
+      <>
+        <PageHeader title="Import from AliExpress" />
+        <Card className="max-w-2xl">
+          {!status ? (
+            error ? <Alert>{error}</Alert> : <p className="text-sm text-muted-foreground">Loading…</p>
+          ) : (
+            <Alert>
+              {status.expired ? "The AliExpress connection has run out." : "AliExpress isn't connected yet."}{" "}
+              <Link href="/admin/settings" className="underline">
+                Connect it in Settings
+              </Link>
+              , then come back here.
+            </Alert>
+          )}
+        </Card>
+      </>
+    );
+  }
+
   return (
     <>
       <PageHeader title="Import from AliExpress" />
-      <Card className="max-w-2xl space-y-4">
-        {!status ? (
-          error ? <Alert>{error}</Alert> : <p className="text-sm text-muted-foreground">Loading…</p>
-        ) : !status.connected ? (
-          <Alert>
-            {status.expired ? "The AliExpress connection has run out." : "AliExpress isn't connected yet."}{" "}
-            <Link href="/admin/settings" className="underline">
-              Connect it in Settings
-            </Link>
-            , then come back here.
-          </Alert>
-        ) : (
-          <form onSubmit={onSubmit} className="space-y-4">
+      <div className="space-y-6">
+        <Suspense>
+          <AliExpressSearch />
+        </Suspense>
+        <Card className="space-y-4">
+          <h2 className="font-semibold">Or paste a product link</h2>
+          <form onSubmit={onSubmit} className="max-w-2xl space-y-4">
             <p className="text-sm text-muted-foreground">
-              Open the product on AliExpress, copy the link from the address bar (or the Share button) and paste it here.
-              The product is added as a <strong>draft</strong> with its photos, options and your cost, so you can change
-              anything before customers see it.
+              Found something on the AliExpress website? Copy the link from the address bar (or the Share button) and
+              paste it here. Either way, the product is added as a <strong>draft</strong> with its photos, options and
+              your cost, so you can change anything before customers see it.
             </p>
             {error && <Alert>{error}</Alert>}
             <Field label="AliExpress product link" htmlFor="link">
@@ -87,8 +103,8 @@ export default function ImportProductPage() {
               {busy ? "Importing… (checking prices and copying photos)" : "Import"}
             </Button>
           </form>
-        )}
-      </Card>
+        </Card>
+      </div>
     </>
   );
 }

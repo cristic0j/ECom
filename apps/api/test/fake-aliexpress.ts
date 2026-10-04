@@ -1,5 +1,6 @@
 import { AliExpressApiError, type AliExpressApi, type AliExpressTokens } from "../src/suppliers/aliexpress-client";
 import type { DsProductResponse } from "../src/suppliers/aliexpress-product";
+import type { DsCategoryResponse, DsFeedNameResponse, DsFeedResponse, DsSearchResponse } from "../src/suppliers/aliexpress-search";
 
 export const HOUR = 3_600_000;
 
@@ -19,6 +20,12 @@ export class FakeAliExpress implements AliExpressApi {
   accessLifetimeMs = 30 * 24 * HOUR;
   down = false;
   products: Record<string, Record<string, DsProductResponse>> = {};
+  /** Answer to every text search */
+  searchAnswer: DsSearchResponse = { code: "00", data: { totalCount: 0, products: { selection_search_product: [] } } };
+  categories: DsCategoryResponse = { resp_result: { result: { categories: { category: [] } } } };
+  feeds: DsFeedNameResponse = { resp_result: { result: { promos: { promo: [] } } } };
+  /** Answer to every bestseller-feed request */
+  feedAnswer: DsFeedResponse = { rsp_code: 200, result: { total_record_count: 0, products: {} } };
   calls: { method: string; params: Record<string, string>; session: string }[] = [];
   imageFetches: string[] = [];
 
@@ -38,6 +45,10 @@ export class FakeAliExpress implements AliExpressApi {
   async call<T>(method: string, params: Record<string, string>, session: string): Promise<T> {
     if (this.down) throw new TypeError("fetch failed");
     this.calls.push({ method, params, session });
+    if (method === "aliexpress.ds.text.search") return this.searchAnswer as T;
+    if (method === "aliexpress.ds.category.get") return this.categories as T;
+    if (method === "aliexpress.ds.feedname.get") return this.feeds as T;
+    if (method === "aliexpress.ds.recommend.feed.get") return this.feedAnswer as T;
     if (method !== "aliexpress.ds.product.get") throw new AliExpressApiError("InvalidApi", `unknown method ${method}`);
     const answer = this.products[params.product_id]?.[params.ship_to_country];
     return (answer ?? { rsp_code: 605, rsp_msg: "ITEM_ID_NOT_FOUND" }) as T;

@@ -99,7 +99,8 @@ export const withSupplierBlocks = (own: string[], blocked: string[]) => [...own,
 
 export const productUrl = (productId: string) => `https://www.aliexpress.com/item/${productId}.html`;
 
-const toMinor = (amount: string | undefined): number | null => {
+/** "4.69" → 469; null for anything that isn't an amount */
+export const toMinor = (amount: string | undefined): number | null => {
   if (!amount || !/^\d+(\.\d+)?$/.test(amount.trim())) return null;
   return Math.round(Number(amount) * 100);
 };

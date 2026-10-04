@@ -16,7 +16,11 @@ import type {
   ProductStatus,
   ProductSummaryDto,
   StoreSettings,
+  SupplierCategoryDto,
   SupplierConnectionDto,
+  SupplierCountryInfo,
+  SupplierSearchQuery,
+  SupplierSearchResultDto,
 } from "@ecom/shared";
 import { json, request, toQuery } from "./api-client";
 
@@ -60,6 +64,11 @@ export const adminApi = {
     request<SupplierConnectionDto>("/admin/aliexpress/connect", json("POST", { code })),
   aliexpressDisconnect: () => request<void>("/admin/aliexpress", json("DELETE")),
   aliexpressImport: (url: string) => request<AdminProductDto>("/admin/aliexpress/import", json("POST", { url })),
+  aliexpressCategories: () => request<SupplierCategoryDto[]>("/admin/aliexpress/categories"),
+  aliexpressSearch: (q: Partial<SupplierSearchQuery>) =>
+    request<SupplierSearchResultDto>(`/admin/aliexpress/search${toQuery(q)}`),
+  aliexpressLookup: (supplierProductId: string) =>
+    request<SupplierCountryInfo[]>(`/admin/aliexpress/lookup/${supplierProductId}`),
   aliexpressRecheck: (productId: string) =>
     request<AdminProductDto>(`/admin/aliexpress/products/${productId}/recheck`, json("POST")),
 

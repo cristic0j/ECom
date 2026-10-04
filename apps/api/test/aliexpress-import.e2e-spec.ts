@@ -245,7 +245,128 @@ describe("AliExpress import (e2e)", () => {
     await http().post(`/api/admin/aliexpress/products/${handMade.id}/recheck`).set("Cookie", adminCookie).expect(400);
   });
 
+  it("lists AliExpress categories as a tree, asking AliExpress once a day", async () => {
+    fake.categories = {
+      resp_result: {
+        result: {
+          categories: {
+            category: [
+              { category_id: 34, category_name: "Automobiles" },
+              { category_id: 3401, category_name: "Car Phone Holders", parent_category_id: 34 },
+            ],
+          },
+        },
+      },
+    };
+    const before = fake.calls.length;
+    const first = await http().get("/api/admin/aliexpress/categories").set("Cookie", adminCookie).expect(200);
+    expect(first.body).toEqual([{ id: "34", name: "Automobiles", children: [{ id: "3401", name: "Car Phone Holders" }] }]);
+    await http().get("/api/admin/aliexpress/categories").set("Cookie", adminCookie).expect(200);
+    expect(fake.calls.slice(before).filter((c) => c.method === "aliexpress.ds.category.get")).toHaveLength(1);
+  });
+
+  it("searches AliExpress for the store's first delivery country and marks products already in the store", async () => {
+    fake.searchAnswer = {
+      code: "00",
+      data: {
+        totalCount: 45,
+        products: {
+          selection_search_product: [
+            { itemId: "1005001", title: "Bone Conduction Earphones", targetSalePrice: "4.69", orders: "10,000+", score: "4.6" },
+            { itemId: "1005777", title: "Phone Holder", targetSalePrice: "1.11", orders: "50,000+", score: "4.5" },
+          ],
+        },
+      },
+    };
+    const res = await http()
+      .get("/api/admin/aliexpress/search?q=holder&categoryId=34&sort=orders&page=2")
+      .set("Cookie", adminCookie)
+      .expect(200);
+    expect(res.body).toMatchObject({ page: 2, totalPages: 3, country: "NL", hidden: 0 });
+    expect(res.body.items).toEqual([
+      expect.objectContaining({ productId: "1005001", importedProductId: imported.id, costMinor: 469 }),
+      expect.objectContaining({ productId: "1005777", importedProductId: null, sold: "50,000+", rating: 4.5 }),
+    ]);
+    expect(fake.calls.at(-1)).toMatchObject({
+      method: "aliexpress.ds.text.search",
+      params: { keyWord: "holder", categoryId: "34", sortBy: "orders,desc", pageIndex: "2", countryCode: "NL", currency: "EUR" },
+    });
+
+    const cheap = await http().get("/api/admin/aliexpress/search?q=holder&maxCost=200").set("Cookie", adminCookie).expect(200);
+    expect(cheap.body).toMatchObject({ hidden: 1, items: [expect.objectContaining({ productId: "1005777" })] });
+    expect(cheap.body.items).toHaveLength(1);
+    expect(fake.calls.at(-1)!.params).not.toHaveProperty("maxCost"); // AliExpress isn't asked to filter
+    await http().get("/api/admin/aliexpress/search?q=holder&minCost=500&maxCost=100").set("Cookie", adminCookie).expect(400);
+
+    const bestSellers = await http()
+      .get("/api/admin/aliexpress/search?q=holder&minSold=20000&reviews=good")
+      .set("Cookie", adminCookie)
+      .expect(200);
+    expect(bestSellers.body).toMatchObject({ hidden: 1, items: [expect.objectContaining({ productId: "1005777" })] });
+    await http().get("/api/admin/aliexpress/search?q=holder&reviews=amazing").set("Cookie", adminCookie).expect(400);
+
+    await http().get("/api/admin/aliexpress/search?q=").set("Cookie", adminCookie).expect(400);
+    await http().get("/api/admin/aliexpress/search?q=x&sort=price").set("Cookie", adminCookie).expect(400);
+    fake.searchAnswer = { code: "EXCEPTION_TEXT_SEARCH_FOR_DS" };
+    const failed = await http().get("/api/admin/aliexpress/search?q=holder").set("Cookie", adminCookie).expect(400);
+    expect(failed.body.message).toMatch(/couldn't run this search/);
+  });
+
+  it("browses a main category without words through AliExpress's bestseller list", async () => {
+    fake.feeds = {
+      resp_result: { result: { promos: { promo: [{ promo_name: "Big_List", product_num: 9 }, { promo_name: "Top_Bestsellers", product_num: 5 }] } } },
+    };
+    fake.feedAnswer = {
+      rsp_code: 200,
+      result: {
+        total_record_count: 30,
+        products: {
+          traffic_product_d_t_o: [
+            { product_id: 1005001, product_title: "Bone Conduction Earphones", target_sale_price: "4.69", target_sale_price_currency: "EUR", lastest_volume: 1200, evaluate_rate: "97.5%" },
+          ],
+        },
+      },
+    };
+    const res = await http().get("/api/admin/aliexpress/search?categoryId=34&page=2").set("Cookie", adminCookie).expect(200);
+    expect(res.body).toMatchObject({ source: "bestsellers", page: 2, totalPages: 2, hidden: 0 });
+    expect(res.body.items).toEqual([
+      expect.objectContaining({ productId: "1005001", importedProductId: imported.id, sold: "1,200", positiveRate: 97.5, rating: null }),
+    ]);
+    expect(fake.calls.at(-1)).toMatchObject({
+      method: "aliexpress.ds.recommend.feed.get",
+      params: { feed_name: "Top_Bestsellers", category_id: "34", page_no: "2", country: "NL", target_currency: "EUR", sort: "volumeDesc" },
+    });
+    await http().get("/api/admin/aliexpress/search?categoryId=34&sort=best").set("Cookie", adminCookie).expect(200);
+    expect(fake.calls.at(-1)!.params).not.toHaveProperty("sort");
+
+    // A subcategory on its own goes to the normal search, without a keyword
+    fake.searchAnswer = { code: "00", data: { totalCount: 0, products: { selection_search_product: [] } } };
+    const sub = await http().get("/api/admin/aliexpress/search?categoryId=3401").set("Cookie", adminCookie).expect(200);
+    expect(sub.body).toMatchObject({ source: "search", totalPages: null });
+    expect(fake.calls.at(-1)!.method).toBe("aliexpress.ds.text.search");
+    expect(fake.calls.at(-1)!.params).not.toHaveProperty("keyWord");
+
+    // Neither words nor a category: bestsellers across all categories
+    const everything = await http().get("/api/admin/aliexpress/search").set("Cookie", adminCookie).expect(200);
+    expect(everything.body).toMatchObject({ source: "bestsellers" });
+    expect(fake.calls.at(-1)!.method).toBe("aliexpress.ds.recommend.feed.get");
+    expect(fake.calls.at(-1)!.params).not.toHaveProperty("category_id");
+    expect(fake.calls.at(-1)!.params).toMatchObject({ sort: "volumeDesc" });
+  });
+
+  it("looks up cost and delivery per country without importing", async () => {
+    const res = await http().get("/api/admin/aliexpress/lookup/1005001").set("Cookie", adminCookie).expect(200);
+    expect(res.body).toEqual([
+      { country: "NL", available: true, costMinor: 499, deliveryDays: 8 },
+      { country: "US", available: true, costMinor: 350, deliveryDays: 12 },
+      { country: "DE", available: true, costMinor: 479, deliveryDays: 9 },
+    ]);
+    await http().get("/api/admin/aliexpress/lookup/not-an-id").set("Cookie", adminCookie).expect(400);
+  });
+
   it("is admin-only", async () => {
     await http().post("/api/admin/aliexpress/import").set("Cookie", editorCookie).send({ url: "1005001" }).expect(403);
+    await http().get("/api/admin/aliexpress/search?q=holder").set("Cookie", editorCookie).expect(403);
+    await http().get("/api/admin/aliexpress/categories").set("Cookie", editorCookie).expect(403);
   });
 });
