@@ -193,5 +193,9 @@ export const adminOrderListQuerySchema = z.object({
 });
 export type AdminOrderListQuery = z.infer<typeof adminOrderListQuerySchema>;
 
+/** Finishing a supplier connection: the address the supplier sent the browser to, or just its `code` value. */
+export const supplierConnectSchema = z.object({ code: z.string().trim().min(1).max(4000) });
+export type SupplierConnectInput = z.infer<typeof supplierConnectSchema>;
+
 export const ALLOWED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif", "image/avif"] as const;
 export const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;

@@ -29,6 +29,14 @@ const schema = z
     STRIPE_SECRET_KEY: z.string().optional(),
     /** whsec_…: from `stripe listen` locally, or the webhook endpoint in the Stripe dashboard */
     STRIPE_WEBHOOK_SECRET: z.string().optional(),
+    /** AliExpress Open Platform app (Dropshipping); both empty = the AliExpress card in Settings says it's not set up */
+    ALIEXPRESS_APP_KEY: z.string().optional(),
+    ALIEXPRESS_APP_SECRET: z.string().optional(),
+    /** Must match the app's Callback URL in the AliExpress console. Empty = SITE_URL + /api/admin/aliexpress/callback */
+    ALIEXPRESS_CALLBACK_URL: z.preprocess(
+      (v) => (v === "" ? undefined : v),
+      z.string().url().startsWith("https://").optional(),
+    ),
   })
   .refine(
     (e) => e.NODE_ENV !== "production" || (e.JWT_SECRET.length >= 32 && !e.JWT_SECRET.startsWith("change-me")),

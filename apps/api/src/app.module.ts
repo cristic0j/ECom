@@ -9,6 +9,7 @@ import { MediaModule } from "./media/media.module";
 import { SettingsModule } from "./settings/settings.module";
 import { CommerceModule } from "./commerce/commerce.module";
 import { EmailModule } from "./email/email.module";
+import { SuppliersModule } from "./suppliers/suppliers.module";
 import { HealthController } from "./health.controller";
 
 @Module({
@@ -22,6 +23,7 @@ import { HealthController } from "./health.controller";
     SettingsModule,
     EmailModule,
     CommerceModule,
+    SuppliersModule,
   ],
   controllers: [HealthController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],

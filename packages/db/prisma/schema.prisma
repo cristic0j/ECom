@@ -272,3 +272,20 @@ model StoreSetting {
   value     Json
   updatedAt DateTime @updatedAt
 }
+
+/// The store's link to a supplier account (one row per supplier). Tokens are encrypted with a key derived from JWT_SECRET.
+model SupplierConnection {
+  /// e.g. "aliexpress"
+  provider         String   @id
+  /// The supplier account's name, shown in the admin (AliExpress: user_nick)
+  account          String
+  accessToken      String
+  refreshToken     String
+  accessExpiresAt  DateTime
+  /// After this the owner has to connect again
+  refreshExpiresAt DateTime
+  /// Admin email
+  connectedBy      String
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}

@@ -70,6 +70,7 @@ cd apps/web && pnpm test:e2e        # Playwright; starts the dev servers if they
    | `EMAIL_DRIVER`, `RESEND_API_KEY`, `EMAIL_FROM` | `resend`, your Resend API key, and a sender such as `My Store <orders@shop.example.com>`. Verify the sender's domain in Resend first. With the default `console`, emails are only printed in the API log. |
    | `ORDER_NOTIFY_EMAIL`, `EMAIL_REPLY_TO` | Optional. Who gets "new order" alerts (default: every ADMIN user) and where customer replies go (default: the sender). |
    | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | Only with `features.payments: true`. Your live secret key (`sk_live_…`) and the signing secret (`whsec_…`) of the webhook endpoint you create in Stripe. Never put them in Settings or commit them. |
+   | `ALIEXPRESS_APP_KEY`, `ALIEXPRESS_APP_SECRET`, `ALIEXPRESS_CALLBACK_URL` | Optional. Your AliExpress app's key and secret, and its Callback URL (see [AliExpress](#aliexpress)). |
    | `API_PUBLIC_URL`, `WEB_ORIGIN` | The API's public URL and the store's origin. They only matter if browsers call the API directly (see below). |
 
    `IMAGE_HOSTS`, `API_INTERNAL_URL` and `SITE_URL` are read when the web app is **built**, so set them for the build as well as at runtime.
@@ -118,6 +119,24 @@ Customers pay on Stripe's hosted payment page (cards, Apple Pay, Google Pay, and
 3. Under Settings → Branding in Stripe, add the store's name, logo and colors; the payment page uses them.
 
 The API refuses to start with `features.payments: true` and no Stripe keys, and logs a warning if production runs with a test key.
+
+## AliExpress
+
+For dropshipping from AliExpress. The store links to the AliExpress account that orders are placed and paid from. Orders can't be paid through AliExpress's API: they wait in that account as "Awaiting payment" until you pay them there.
+
+### Connecting
+
+1. On the [AliExpress Open Platform](https://openservice.aliexpress.com), create a **Dropshipping** app. Set its **Callback URL** to `https://<your store domain>/api/admin/aliexpress/callback` (it must be https).
+2. Put the app's key and secret in `.env` as `ALIEXPRESS_APP_KEY` and `ALIEXPRESS_APP_SECRET`, and the same Callback URL as `ALIEXPRESS_CALLBACK_URL`. Restart the API.
+3. In the admin, go to **Settings → AliExpress → Connect AliExpress**, sign in to AliExpress in the tab that opens and allow access. You land back on Settings with "Connected as …".
+
+The connection is kept encrypted in the database (using `JWT_SECRET`, so changing that secret means connecting again) and renews itself. If AliExpress ends it, the card says "Needs reconnecting".
+
+### Local testing
+
+AliExpress won't accept `localhost` as a Callback URL, so locally keep the app's https URL (any address works, e.g. `https://example.com/api/admin/aliexpress/callback`). After you allow access, AliExpress sends you to that address, which may not load. Copy the whole address from the browser's address bar and paste it into the card under "Address after signing in", then click **Finish connecting**.
+
+Before going live, change the Callback URL to your real domain, both in the AliExpress console and in `ALIEXPRESS_CALLBACK_URL`. Then the redirect connects on its own.
 
 ## Deploy topology
 

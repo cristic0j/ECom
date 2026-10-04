@@ -181,3 +181,17 @@ export interface CheckoutResultDto {
 export interface PayOrderResultDto {
   paymentUrl: string;
 }
+
+export interface SupplierConnectionDto {
+  /** The app keys are in the API's environment */
+  configured: boolean;
+  /** Connected, and the connection hasn't run out */
+  connected: boolean;
+  /** Connected once, but the connection ran out: connect again */
+  expired: boolean;
+  account: string | null;
+  connectedBy: string | null;
+  connectedAt: string | null;
+  /** When the owner will have to connect again */
+  expiresAt: string | null;
+}

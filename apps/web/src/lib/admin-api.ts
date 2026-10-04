@@ -16,6 +16,7 @@ import type {
   ProductStatus,
   ProductSummaryDto,
   StoreSettings,
+  SupplierConnectionDto,
 } from "@ecom/shared";
 import { json, request, toQuery } from "./api-client";
 
@@ -51,6 +52,12 @@ export const adminApi = {
 
   getSettings: () => request<StoreSettings>("/settings"),
   updateSettings: (patch: StoreSettings) => request<StoreSettings>("/admin/settings", json("PUT", patch)),
+
+  aliexpressStatus: () => request<SupplierConnectionDto>("/admin/aliexpress"),
+  aliexpressAuthorize: () => request<{ url: string }>("/admin/aliexpress/authorize", json("POST")),
+  aliexpressConnect: (code: string) =>
+    request<SupplierConnectionDto>("/admin/aliexpress/connect", json("POST", { code })),
+  aliexpressDisconnect: () => request<void>("/admin/aliexpress", json("DELETE")),
 
   uploadImage: (file: File) => {
     const form = new FormData();
